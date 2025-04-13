@@ -52,10 +52,6 @@ class Event
     #[Groups(['events:lists', 'events:create'])]
     private ?\DateTimeImmutable $endAt = null;
 
-    #[ORM\Column(length: 100)]
-    #[Groups(['events:lists', 'events:create'])]
-    private ?string $localisation = null;
-
     #[ORM\Column(type: Types::ARRAY)]
     
     private array $imageUrl = [];
@@ -78,6 +74,11 @@ class Event
     #[ORM\JoinColumn(nullable: false)]
     #[Groups(['events:details', 'events:create'])]
     private ?Organizer $organizer = null;
+
+    #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
+    #[ORM\JoinColumn(nullable: false)]
+    #[Groups(['events:lists', 'events:create'])]
+    private ?Location $location = null;
 
     public function __construct()
     {
@@ -141,17 +142,6 @@ class Event
         return $this;
     }
 
-    public function getLocalisation(): ?string
-    {
-        return $this->localisation;
-    }
-
-    public function setLocalisation(string $localisation): static
-    {
-        $this->localisation = $localisation;
-
-        return $this;
-    }
 
     public function getImageUrl(): array
     {
@@ -221,6 +211,18 @@ class Event
     public function setOrganizer(?Organizer $organizer): static
     {
         $this->organizer = $organizer;
+
+        return $this;
+    }
+
+    public function getLocation(): ?Location
+    {
+        return $this->location;
+    }
+
+    public function setLocation(?Location $location): static
+    {
+        $this->location = $location;
 
         return $this;
     }

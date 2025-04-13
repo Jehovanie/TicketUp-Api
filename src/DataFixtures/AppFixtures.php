@@ -4,6 +4,7 @@ namespace App\DataFixtures;
 
 use App\Entity\Category;
 use App\Entity\Event;
+use App\Entity\Location;
 use App\Entity\Organizer;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
@@ -40,6 +41,17 @@ class AppFixtures extends Fixture
             $organizers[] = $organizer;
         }
 
+        $locations = [];
+        for ($i = 0; $i < 5; $i++) {
+            $location = new Location();
+            $location->setName($faker->word());
+            $location->setSize($faker->numberBetween(50, 500));
+            $location->setCreatedAt(new \DateTimeImmutable());
+            $location->setUpdatedAt(new \DateTimeImmutable());
+            $manager->persist($location);
+            $locations[] = $location;
+        }
+
         // Génération des événements
         for ($i = 0; $i < 20; $i++) {
             $event = new Event();
@@ -47,8 +59,8 @@ class AppFixtures extends Fixture
             $event->setDescription($faker->paragraph());
             $event->setStartedAt(new \DateTimeImmutable($faker->dateTimeBetween('now', '+1 year')->format('Y-m-d H:i:s')));
             $event->setEndAt(new \DateTimeImmutable($faker->dateTimeBetween('+1 day', '+1 year')->format('Y-m-d H:i:s')));
-            $event->setLocalisation($faker->city());
             $event->setStatus($faker->boolean());
+            $event->setLocation($faker->randomElement($locations));
             $event->setCategory($faker->randomElement($categories));
             $event->setOrganizer($faker->randomElement($organizers));
             $event->setCreatedAt(new \DateTimeImmutable());
