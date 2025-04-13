@@ -1,0 +1,11 @@
+api_platform:
+    title: Hello API Platform
+    version: 1.0.0
+    defaults:
+        stateless: true
+        cache_headers:
+            vary: ['Content-Type', 'Authorization', 'Origin']
+    formats:
+        jsonld: ['application/ld+json']
+        json: ['application/json']
+        jsonhal: ['application/hal+json'] # si tu veux ajouter HAL
