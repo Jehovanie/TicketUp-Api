@@ -11,8 +11,8 @@ use Symfony\Component\Serializer\Annotation\Groups;
 
 #[ORM\Entity(repositoryClass: EventRepository::class)]
 #[ApiResource(
-    paginationItemsPerPage: 2,
-    paginationMaximumItemsPerPage: 5,
+    paginationItemsPerPage: 10,
+    paginationMaximumItemsPerPage: 20,
     paginationClientItemsPerPage: true,
     operations: [
         new \ApiPlatform\Metadata\GetCollection(
@@ -67,6 +67,7 @@ class Event
     private ?\DateTimeImmutable $updatedAt = null;
 
     #[ORM\Column]
+    #[Groups(['events:lists'])]
     private ?bool $status = null;
 
     #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
