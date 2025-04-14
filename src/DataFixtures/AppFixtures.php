@@ -6,6 +6,7 @@ use App\Entity\Category;
 use App\Entity\Event;
 use App\Entity\Location;
 use App\Entity\Organizer;
+use App\Entity\TicketType;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
 use Faker\Factory;
@@ -15,6 +16,28 @@ class AppFixtures extends Fixture
     public function load(ObjectManager $manager): void
     {
         $faker = Factory::create('fr_FR');
+
+        $typePlaces = [
+            'VIP',
+            'Fanzone',
+            'Standard',
+            'Backstage',
+            'Carré Or',
+            'Balcon',
+            'Gradin',
+            'Parterre',
+            'Loge',
+            'Front Stage',
+            'Premium',
+            'Entrée Libre',
+            'Early Access',
+            'After Party',
+            'Pack Groupe',
+            'Zone Presse',
+            'Handicapé',
+            'Espace Famille',
+        ];
+
 
         // Génération des catégories
         $categories = [];
@@ -67,6 +90,22 @@ class AppFixtures extends Fixture
             $event->setUpdatedAt(new \DateTimeImmutable());
 
             $manager->persist($event);
+
+            // Sélectionner entre 1 et 5 types de place au hasard
+            $nombreTypes = rand(1, 5);
+            $typesChoisis = $faker->randomElements($typePlaces, $nombreTypes);
+
+            foreach ($typesChoisis as $nomType) {
+                $typePlace = new TicketType();
+                $typePlace->setName($nomType);
+                $typePlace->setPrix($faker->randomFloat(2, 10, 150)); // ex: entre 10€ et 150€
+                $typePlace->setQuantiteMax(rand(10, 200));
+                $typePlace->setEvent($event);
+
+                $manager->persist($typePlace);
+            }
+
+
         }
 
         $manager->flush();

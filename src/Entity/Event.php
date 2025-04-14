@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\EventRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use ApiPlatform\Metadata\ApiResource;
@@ -80,6 +82,13 @@ class Event
     #[Groups(['events:lists', 'events:create'])]
     private ?Location $location = null;
 
+    /**
+     * @var Collection<int, TicketType>
+     */
+    #[ORM\OneToMany(targetEntity: TicketType::class, mappedBy: 'event', orphanRemoval: true, cascade: ['remove'])]
+    #[Groups(['events:lists', 'events:details', 'events:create'])]
+    private Collection $ticket_type;
+
     public function __construct()
     {
         $this->setUpdatedAt(new \DateTimeImmutable());
@@ -87,6 +96,7 @@ class Event
             $this->setCreatedAt(new \DateTimeImmutable());
             $this->setStatus(false);
         }
+        $this->ticket_type = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -223,6 +233,36 @@ class Event
     public function setLocation(?Location $location): static
     {
         $this->location = $location;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, TicketType>
+     */
+    public function getTicketType(): Collection
+    {
+        return $this->ticket_type;
+    }
+
+    public function addTicketType(TicketType $ticketType): static
+    {
+        if (!$this->ticket_type->contains($ticketType)) {
+            $this->ticket_type->add($ticketType);
+            $ticketType->setEvent($this);
+        }
+
+        return $this;
+    }
+
+    public function removeTicketType(TicketType $ticketType): static
+    {
+        if ($this->ticket_type->removeElement($ticketType)) {
+            // set the owning side to null (unless already changed)
+            if ($ticketType->getEvent() === $this) {
+                $ticketType->setEvent(null);
+            }
+        }
 
         return $this;
     }
