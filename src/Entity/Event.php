@@ -85,7 +85,7 @@ class Event
     /**
      * @var Collection<int, TicketType>
      */
-    #[ORM\OneToMany(targetEntity: TicketType::class, mappedBy: 'event', orphanRemoval: true, cascade: ['remove'])]
+    #[ORM\OneToMany(targetEntity: TicketType::class, mappedBy: 'event', orphanRemoval: true, cascade: ['persist', 'remove'])]
     #[Groups(['events:lists', 'events:details', 'events:create'])]
     private Collection $ticket_type;
 
