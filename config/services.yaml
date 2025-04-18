@@ -20,13 +20,8 @@ services:
             - "../src/Entity/"
             - "../src/Kernel.php"
 
-    App\Serializer\Denormalizer\LocationDenormalizer:
+    App\Serializer\Denormalizer\EventInputDenormalizer:
         tags: [serializer.normalizer]
 
-    App\Serializer\Denormalizer\CategoryDenormalizer:
-        tags: [serializer.normalizer]
-        
-    App\Serializer\Denormalizer\OrganizerDenormalizer:
-        tags: [serializer.normalizer]
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
