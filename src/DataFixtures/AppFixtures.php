@@ -58,6 +58,8 @@ class AppFixtures extends Fixture
             $organizer->setName($faker->company());
             $organizer->setEmail($faker->companyEmail());
             $organizer->setPhone($faker->phoneNumber());
+            $organizer->setWebsite($faker->url());
+            $organizer->setAddress($faker->address());
             $organizer->setCreatedAt(new \DateTimeImmutable());
             $organizer->setUpdatedAt(new \DateTimeImmutable());
             $manager->persist($organizer);

@@ -8,6 +8,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use ApiPlatform\Metadata\ApiResource;
+
 use Symfony\Component\Serializer\Annotation\Groups;
 
 
@@ -85,7 +86,7 @@ class Event
     /**
      * @var Collection<int, TicketType>
      */
-    #[ORM\OneToMany(targetEntity: TicketType::class, mappedBy: 'event', orphanRemoval: true, cascade: ['remove'])]
+    #[ORM\OneToMany(targetEntity: TicketType::class, mappedBy: 'event', orphanRemoval: true, cascade: ['persist', 'remove'])]
     #[Groups(['events:lists', 'events:details', 'events:create'])]
     private Collection $ticket_type;
 
