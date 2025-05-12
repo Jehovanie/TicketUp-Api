@@ -59,7 +59,7 @@ class AppFixtures extends Fixture
             $organizer->setEmail($faker->companyEmail());
             $organizer->setPhone($faker->phoneNumber());
             $organizer->setWebsite($faker->url());
-            $organizer->setAddress($faker->address());
+            // $organizer->setAddress($faker->address());
             $organizer->setCreatedAt(new \DateTimeImmutable());
             $organizer->setUpdatedAt(new \DateTimeImmutable());
             $manager->persist($organizer);
@@ -97,17 +97,33 @@ class AppFixtures extends Fixture
             $nombreTypes = rand(1, 5);
             $typesChoisis = $faker->randomElements($typePlaces, $nombreTypes);
 
-            foreach ($typesChoisis as $nomType) {
+            $locationSize = $event->getLocation()->getSize();
+            $remainingCapacity = $locationSize;
+            $quantities = [];
+
+            // Répartir équitablement la capacité
+            for ($j = 0; $j < $nombreTypes; $j++) {
+                // Dernier ticket => prend le reste
+                if ($j === $nombreTypes - 1) {
+                    $quantities[] = $remainingCapacity;
+                } else {
+                    // Répartition aléatoire entre 1 et (reste - nb tickets restants)
+                    $max = $remainingCapacity - ($nombreTypes - $j - 1);
+                    $qty = rand(1, $max);
+                    $quantities[] = $qty;
+                    $remainingCapacity -= $qty;
+                }
+            }
+
+            foreach ($typesChoisis as $index => $nomType) {
                 $typePlace = new TicketType();
                 $typePlace->setName($nomType);
-                $typePlace->setPrix($faker->randomFloat(2, 10, 150)); // ex: entre 10€ et 150€
-                $typePlace->setQuantiteMax(rand(10, 200));
+                $typePlace->setPrix($faker->randomFloat(2, 10, 150));
+                $typePlace->setQuantiteMax($quantities[$index]);
                 $typePlace->setEvent($event);
 
                 $manager->persist($typePlace);
             }
-
-
         }
 
         $manager->flush();
