@@ -8,6 +8,8 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\OpenApi\Model\Operation as OpenApiOperation;
+use ApiPlatform\OpenApi\Model\Parameter;
 
 use Symfony\Component\Serializer\Annotation\Groups;
 
@@ -19,15 +21,35 @@ use Symfony\Component\Serializer\Annotation\Groups;
     paginationClientItemsPerPage: true,
     operations: [
         new \ApiPlatform\Metadata\GetCollection(
-            normalizationContext :  [ "groups" => [ 'events:lists'] ],
+            normalizationContext: ["groups" => ['events:lists']],
         ),
         new \ApiPlatform\Metadata\Get(
-            uriTemplate:'/events/{id}',
-            normalizationContext :  [ "groups" => [ 'events:lists', 'events:details'] ],
+            uriTemplate: '/events/{id}',
+            normalizationContext: ["groups" => ['events:lists', 'events:details']],
+        ),
+        new \ApiPlatform\Metadata\Get(
+            uriTemplate: '/admin/events/{id}',
+            controller: \App\Controller\Admin\Event\AdminEventDetailsController::class,
+            read: false, // we don’t want to automatically fetch the entity
+            openapi: new OpenApiOperation(
+                summary: 'Get admin details of a specific event',
+                description: 'Custom admin event logic',
+                parameters: [
+                    new Parameter(
+                        name: 'id',
+                        in: 'path',
+                        required: true,
+                        description: 'The ID of the event',
+                        schema: [
+                            'type' => 'integer'
+                        ]
+                    )
+                ]
+            )
         ),
         new \ApiPlatform\Metadata\Post(
-            uriTemplate:'/events',
-            denormalizationContext :  [ "groups" => [ 'events:create'] ],
+            uriTemplate: '/events',
+            denormalizationContext: ["groups" => ['events:create']],
         ),
     ]
 )]
@@ -56,7 +78,7 @@ class Event
     private ?\DateTimeImmutable $endAt = null;
 
     #[ORM\Column(type: Types::ARRAY)]
-    
+
     private array $imageUrl = [];
 
     #[ORM\Column]
@@ -93,7 +115,7 @@ class Event
     public function __construct()
     {
         $this->setUpdatedAt(new \DateTimeImmutable());
-        if( $this->getId() === null ) {
+        if ($this->getId() === null) {
             $this->setCreatedAt(new \DateTimeImmutable());
             $this->setStatus(false);
         }
