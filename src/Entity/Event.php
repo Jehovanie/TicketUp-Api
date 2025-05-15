@@ -92,7 +92,7 @@ class Event
     private ?bool $status = null;
 
     #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
-    #[Groups(['events:details', 'events:create'])]
+    #[Groups(['events:lists','events:details', 'events:create'])]
     private ?Category $category = null;
 
     #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]

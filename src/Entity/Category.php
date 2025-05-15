@@ -26,11 +26,11 @@ class Category
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['events:details', 'category:lists'])]
+    #[Groups(['events:lists', 'events:details', 'category:lists'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 100)]
-    #[Groups(['events:details', 'events:create', 'category:lists'])]
+    #[Groups(['events:lists', 'events:details', 'events:create', 'category:lists'])]
     private ?string $name = null;
 
     #[ORM\Column(length: 50)]
