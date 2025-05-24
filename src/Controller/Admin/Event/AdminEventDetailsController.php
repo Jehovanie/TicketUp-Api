@@ -26,6 +26,7 @@ final class AdminEventDetailsController
         ];
 
         $event = $this->eventRepository->find($id);
+        // dd($event);
         $all_ticket = $event->getTicketType();
 
         $state_global = array_map(fn($ticket) => [
@@ -38,7 +39,14 @@ final class AdminEventDetailsController
 
         return new JsonResponse([
             "hello" => "world",
-            "statusTicket" => $statusTicket
+            "events" => [
+                "event" => [
+                    "id" => $event->getId(),
+                    "title" => $event->getTitle(),
+                    "description" => $event->getDescription()
+                ],
+                "statusTicket" => $statusTicket
+            ]
         ]);
     }
 }
