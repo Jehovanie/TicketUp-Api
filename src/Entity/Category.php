@@ -16,7 +16,7 @@ use Symfony\Component\Serializer\Annotation\Groups;
             normalizationContext :  [ "groups" => [ 'category:lists'] ],
         ),
         new \ApiPlatform\Metadata\Get(
-            uriTemplate:'/category/{id}',
+            uriTemplate:'/categories/{id}',
             normalizationContext :  [ "groups" => [ 'category:lists', 'category:details'] ],
         ),
     ]
