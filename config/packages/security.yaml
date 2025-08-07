@@ -12,6 +12,10 @@ security:
         main:
             lazy: true
             provider: users_in_memory
+        api:
+            pattern: ^/api
+            stateless: true
+            entry_point: null
 
             # activate different ways to authenticate
             # https://symfony.com/doc/current/security.html#the-firewall
