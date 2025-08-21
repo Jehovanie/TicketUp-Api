@@ -26,13 +26,11 @@ security:
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
 
-        main:
-            lazy: true
-            provider: app_user_provider
         api:
             pattern: ^/api
             stateless: true
-            entry_point: null
+            provider: app_user_provider
+            jwt: ~ 
 
             # activate different ways to authenticate
             # https://symfony.com/doc/current/security.html#the-firewall
@@ -43,8 +41,9 @@ security:
     # Easy way to control access for large sections of your site
     # Note: Only the *first* access control that matches will be used
     access_control:
-        # - { path: ^/admin, roles: ROLE_ADMIN }
-        # - { path: ^/profile, roles: ROLE_USER }
+    - { path: ^/api/auth/login$, roles: PUBLIC_ACCESS }
+    - { path: ^/api/auth/register$, roles: PUBLIC_ACCESS }
+    - { path: ^/api/user$, roles: IS_AUTHENTICATED_FULLY }
 
 when@test:
     security:
