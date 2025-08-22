@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiProperty;
 use App\Repository\OrganizerRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -29,20 +30,8 @@ class Organizer
     #[Groups(['events:details', 'organizer:lists'])]
     private ?int $id = null;
 
-    #[ORM\Column(length: 100)]
-    #[Groups(['events:details', 'events:create', 'organizer:lists'])]
-    private ?string $name = null;
-
-    #[ORM\Column(length: 100)]
-    #[Groups(['events:details', 'events:create', 'organizer:lists'])]
-    private ?string $email = null;
-
-    #[ORM\Column(length: 50, nullable: true)]
-    #[Groups(['events:details', 'events:create', 'organizer:details'])]
-    private ?string $phone = null;
-
     #[ORM\Column(length: 100, nullable: true)]
-    #[Groups(['events:details', 'events:create', 'organizer:details'])]
+    #[Groups(['events:create', 'events:details', 'organizer:details'])]
     private ?string $website = null;
 
     #[ORM\Column]
@@ -59,6 +48,12 @@ class Organizer
     #[ORM\OneToMany(targetEntity: Event::class, mappedBy: 'organizer', orphanRemoval: true)]
     private Collection $events;
 
+    #[ORM\ManyToOne(inversedBy: 'organizers')]
+    #[ORM\JoinColumn(nullable: false)] 
+    #[ApiProperty(writable: false)]
+    #[Groups(['events:details', 'organizer:lists', 'organizer:details'])]
+    private ?User $user = null;
+
     public function __construct()
     {
         $this->events = new ArrayCollection();
@@ -72,42 +67,6 @@ class Organizer
     public function getId(): ?int
     {
         return $this->id;
-    }
-
-    public function getName(): ?string
-    {
-        return $this->name;
-    }
-
-    public function setName(string $name): static
-    {
-        $this->name = $name;
-
-        return $this;
-    }
-
-    public function getEmail(): ?string
-    {
-        return $this->email;
-    }
-
-    public function setEmail(string $email): static
-    {
-        $this->email = $email;
-
-        return $this;
-    }
-
-    public function getPhone(): ?string
-    {
-        return $this->phone;
-    }
-
-    public function setPhone(?string $phone): static
-    {
-        $this->phone = $phone;
-
-        return $this;
     }
 
     public function getWebsite(): ?string
@@ -172,6 +131,18 @@ class Organizer
                 $event->setOrganizer(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getUser(): ?User
+    {
+        return $this->user;
+    }
+
+    public function setUser(?User $user): static
+    {
+        $this->user = $user;
 
         return $this;
     }

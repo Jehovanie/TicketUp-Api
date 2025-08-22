@@ -2,7 +2,11 @@ _security_logout:
     resource: security.route_loader.logout
     type: service
 
-
 api_login:
     path: /api/auth/login
+    methods: [POST]
+
+api_register:
+    path: /api/auth/register
+    controller: App\Controller\Auth\RegisterController
     methods: [POST]

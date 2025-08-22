@@ -3,18 +3,33 @@
 namespace App\Entity;
 
 use App\Repository\UserRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Validator\Constraints as Assert;
+use ApiPlatform\Metadata\ApiResource;
+use Symfony\Component\Serializer\Annotation\Groups;
 
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: '`user`')]
 #[ORM\UniqueConstraint(name: 'UNIQ_IDENTIFIER_EMAIL', fields: ['email'])]
 #[UniqueEntity(fields: ['email'], message: 'Cet email est déjà utilisé.')]
 #[ORM\HasLifecycleCallbacks]
+#[ApiResource(
+    operations: [
+        new \ApiPlatform\Metadata\GetCollection(
+            normalizationContext: ["groups" => ['organizer:lists']],
+        ),
+        new \ApiPlatform\Metadata\Get(
+            uriTemplate: '/organizer/{id}',
+            normalizationContext: ["groups" => ['organizer:lists', 'organizer:details']],
+        ),
+    ]
+)]
 class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
@@ -24,6 +39,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[Assert\Email]
     #[Assert\Length(max: 180)]
     #[ORM\Column(length: 180)]
+    #[Groups(['events:details', 'organizer:lists'])]
     private ?string $email = null;
 
     /** @var list<string> */
@@ -38,31 +54,50 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[Assert\NotBlank]
     #[Assert\Length(max: 50)]
     #[ORM\Column(length: 50)]
+    #[Groups(['events:details','organizer:lists'])]
     private ?string $firstname = null;
 
     #[Assert\NotBlank]
     #[Assert\Length(max: 50)]
     #[ORM\Column(length: 50)]
+    #[Groups(['events:details', 'organizer:lists'])]
     private ?string $lastname = null;
 
     #[Assert\Length(max: 30)]
     #[ORM\Column(length: 30, nullable: true)]
+    #[Groups(['events:details', 'organizer:lists'])]
     private ?string $phone = null;
 
     // Ex: "fr", "en" (ISO 639-1)
     #[Assert\Length(max: 10)]
     #[ORM\Column(length: 10, nullable: true)]
+    #[Groups(['organizer:details'])]
     private ?string $language = null;
 
     // Interprété comme "date d'activation"
     #[ORM\Column(type: Types::DATETIME_MUTABLE, nullable: true)]
+    #[Groups(['organizer:lists'])]
     private ?\DateTimeInterface $is_active = null;
 
     #[ORM\Column]
+    #[Groups(['organizer:details'])]
     private ?\DateTimeImmutable $createdAt = null;
 
     #[ORM\Column]
+    #[Groups(['organizer:details'])]
     private ?\DateTimeImmutable $updatedAt = null;
+
+    /**
+     * @var Collection<int, Organizer>
+     */
+    #[ORM\OneToMany(targetEntity: Organizer::class, mappedBy: 'user', orphanRemoval: true)]
+    private Collection $organizers;
+
+    public function __construct()
+    {
+        $this->organizers = new ArrayCollection();
+    }
+
 
     public function getId(): ?int
     {
@@ -196,5 +231,35 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function onPreUpdate(): void
     {
         $this->updatedAt = new \DateTimeImmutable();
+    }
+
+    /**
+     * @return Collection<int, Organizer>
+     */
+    public function getOrganizers(): Collection
+    {
+        return $this->organizers;
+    }
+
+    public function addOrganizer(Organizer $organizer): static
+    {
+        if (!$this->organizers->contains($organizer)) {
+            $this->organizers->add($organizer);
+            $organizer->setUser($this);
+        }
+
+        return $this;
+    }
+
+    public function removeOrganizer(Organizer $organizer): static
+    {
+        if ($this->organizers->removeElement($organizer)) {
+            // set the owning side to null (unless already changed)
+            if ($organizer->getUser() === $this) {
+                $organizer->setUser(null);
+            }
+        }
+
+        return $this;
     }
 }

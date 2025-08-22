@@ -50,6 +50,7 @@ use Symfony\Component\Serializer\Annotation\Groups;
         new \ApiPlatform\Metadata\Post(
             uriTemplate: '/events',
             denormalizationContext: ["groups" => ['events:create']],
+            security: "is_granted('ROLE_USER')",
         ),
     ]
 )]

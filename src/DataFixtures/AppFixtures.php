@@ -7,6 +7,7 @@ use App\Entity\Event;
 use App\Entity\Location;
 use App\Entity\Organizer;
 use App\Entity\TicketType;
+use App\Entity\User;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
 use Faker\Factory;
@@ -53,13 +54,28 @@ class AppFixtures extends Fixture
 
         // Génération des organisateurs
         $organizers = [];
+        $users = [];
+        for ($i = 0; $i < 20; $i++) {
+
+            $user = new User();
+            $user->setEmail($faker->companyEmail());
+            $user->setPassword('password'); // Utiliser un mot de passe par défaut pour
+            $user->setRoles(['ROLE_ORGANIZER']);
+            $user->setPhone($faker->phoneNumber());
+            $user->setFirstName($faker->firstName());
+            $user->setLastName($faker->lastName());
+            $user->setLanguage($faker->randomElement(['fr', 'en', 'es', 'de']));
+            $user->setIsActive(new \DateTimeImmutable());
+            $user->setCreatedAt(new \DateTimeImmutable());
+            $user->setUpdatedAt(new \DateTimeImmutable());
+            $manager->persist($user);
+            $users[] = $user;
+        }
+
         for ($i = 0; $i < 10; $i++) {
             $organizer = new Organizer();
-            $organizer->setName($faker->company());
-            $organizer->setEmail($faker->companyEmail());
-            $organizer->setPhone($faker->phoneNumber());
+            $organizer->setUser($faker->randomElement($users));
             $organizer->setWebsite($faker->url());
-            // $organizer->setAddress($faker->address());
             $organizer->setCreatedAt(new \DateTimeImmutable());
             $organizer->setUpdatedAt(new \DateTimeImmutable());
             $manager->persist($organizer);
