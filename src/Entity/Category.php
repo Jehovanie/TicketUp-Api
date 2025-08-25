@@ -5,6 +5,7 @@ namespace App\Entity;
 use App\Repository\CategoryRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use ApiPlatform\Metadata\ApiResource;
 use Symfony\Component\Serializer\Annotation\Groups;
@@ -50,6 +51,14 @@ class Category
      */
     #[ORM\OneToMany(targetEntity: Event::class, mappedBy: 'category')]
     private Collection $events;
+
+    #[ORM\Column(length: 25)]
+    #[Groups(['category:lists'])]
+    private ?string $slug = null;
+
+    #[ORM\Column(type: Types::GUID)]
+    #[Groups(['category:lists'])]
+    private ?string $uuid = null;
 
     public function __construct()
     {
@@ -140,6 +149,30 @@ class Category
                 $event->setCategory(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getSlug(): ?string
+    {
+        return $this->slug;
+    }
+
+    public function setSlug(string $slug): static
+    {
+        $this->slug = $slug;
+
+        return $this;
+    }
+
+    public function getUuid(): ?string
+    {
+        return $this->uuid;
+    }
+
+    public function setUuid(string $uuid): static
+    {
+        $this->uuid = $uuid;
 
         return $this;
     }

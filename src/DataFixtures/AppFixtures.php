@@ -42,10 +42,12 @@ class AppFixtures extends Fixture
 
         // Génération des catégories
         $categories = [];
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 15; $i++) {
             $category = new Category();
             $category->setName($faker->word());
             $category->setColor($faker->hexColor());
+            $category->setSlug($faker->slug(1, true));
+            $category->setUuid($faker->uuid());
             $category->setCreatedAt(new \DateTimeImmutable());
             $category->setUpdatedAt(new \DateTimeImmutable());
             $manager->persist($category);
@@ -55,7 +57,7 @@ class AppFixtures extends Fixture
         // Génération des organisateurs
         $organizers = [];
         $users = [];
-        for ($i = 0; $i < 20; $i++) {
+        for ($i = 0; $i < 30; $i++) {
 
             $user = new User();
             $user->setEmail($faker->companyEmail());
@@ -72,7 +74,7 @@ class AppFixtures extends Fixture
             $users[] = $user;
         }
 
-        for ($i = 0; $i < 10; $i++) {
+        for ($i = 0; $i < 25; $i++) {
             $organizer = new Organizer();
             $organizer->setUser($faker->randomElement($users));
             $organizer->setWebsite($faker->url());
@@ -83,7 +85,7 @@ class AppFixtures extends Fixture
         }
 
         $locations = [];
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 10; $i++) {
             $location = new Location();
             $location->setName($faker->word());
             $location->setSize($faker->numberBetween(50, 500));
@@ -94,13 +96,15 @@ class AppFixtures extends Fixture
         }
 
         // Génération des événements
-        for ($i = 0; $i < 20; $i++) {
+        for ($i = 0; $i < 50; $i++) {
             $event = new Event();
             $event->setTitle($faker->sentence(3));
             $event->setDescription($faker->paragraph());
             $event->setStartedAt(new \DateTimeImmutable($faker->dateTimeBetween('now', '+1 year')->format('Y-m-d H:i:s')));
             $event->setEndAt(new \DateTimeImmutable($faker->dateTimeBetween('+1 day', '+1 year')->format('Y-m-d H:i:s')));
             $event->setStatus($faker->boolean());
+            $event->setUuid($faker->uuid());
+            $event->setSlug($faker->slug(1, true));
             $event->setLocation($faker->randomElement($locations));
             $event->setCategory($faker->randomElement($categories));
             $event->setOrganizer($faker->randomElement($organizers));

@@ -113,6 +113,14 @@ class Event
     #[Groups(['events:lists', 'events:details', 'events:create'])]
     private Collection $ticket_type;
 
+    #[ORM\Column(length: 25)]
+    #[Groups(['events:lists'])]
+    private ?string $slug = null;
+
+    #[ORM\Column(type: Types::GUID)]
+    #[Groups(['events:lists'])]
+    private ?string $uuid = null;
+
     public function __construct()
     {
         $this->setUpdatedAt(new \DateTimeImmutable());
@@ -287,6 +295,30 @@ class Event
                 $ticketType->setEvent(null);
             }
         }
+
+        return $this;
+    }
+
+    public function getSlug(): ?string
+    {
+        return $this->slug;
+    }
+
+    public function setSlug(string $slug): static
+    {
+        $this->slug = $slug;
+
+        return $this;
+    }
+
+    public function getUuid(): ?string
+    {
+        return $this->uuid;
+    }
+
+    public function setUuid(string $uuid): static
+    {
+        $this->uuid = $uuid;
 
         return $this;
     }
