@@ -41,7 +41,7 @@ class AppFixtures extends Fixture
 
         // Génération des catégories
         $categories = [];
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 25; $i++) {
             $category = new Category();
             $category->setName($faker->word());
             $category->setColor($faker->hexColor());
@@ -53,7 +53,7 @@ class AppFixtures extends Fixture
 
         // Génération des organisateurs
         $organizers = [];
-        for ($i = 0; $i < 10; $i++) {
+        for ($i = 0; $i < 30; $i++) {
             $organizer = new Organizer();
             $organizer->setName($faker->company());
             $organizer->setEmail($faker->companyEmail());
@@ -67,7 +67,7 @@ class AppFixtures extends Fixture
         }
 
         $locations = [];
-        for ($i = 0; $i < 5; $i++) {
+        for ($i = 0; $i < 21; $i++) {
             $location = new Location();
             $location->setName($faker->word());
             $location->setSize($faker->numberBetween(50, 500));
@@ -78,7 +78,7 @@ class AppFixtures extends Fixture
         }
 
         // Génération des événements
-        for ($i = 0; $i < 20; $i++) {
+        for ($i = 0; $i < 100; $i++) {
             $event = new Event();
             $event->setTitle($faker->sentence(3));
             $event->setDescription($faker->paragraph());
