@@ -24,6 +24,8 @@ class SearchEventController extends AbstractController
         $title = $request->query->get('title');
         $startDate = $request->query->get('startDate');
         $endDate = $request->query->get('endDate');
+        $page = max(1, (int) $request->query->get('page', 1));
+        $itemsPerPage = min(20, max(1, (int) $request->query->get('itemsPerPage', 10)));
 
         $criteria = [];
 
@@ -40,7 +42,9 @@ class SearchEventController extends AbstractController
                 $criteria['startDate'] = new \DateTimeImmutable($startDate);
             } catch (\Exception $e) {
                 return $this->json([
-                    'error' => 'Format de date invalide pour startDate. Utilisez le format: Y-m-d'
+                    'message' => 'Format de date invalide pour startDate. Utilisez le format: Y-m-d',
+                    'status' => 400,
+                    'data' => null
                 ], 400);
             }
         }
@@ -50,7 +54,9 @@ class SearchEventController extends AbstractController
                 $criteria['endDate'] = new \DateTimeImmutable($endDate);
             } catch (\Exception $e) {
                 return $this->json([
-                    'error' => 'Format de date invalide pour endDate. Utilisez le format: Y-m-d'
+                    'message' => 'Format de date invalide pour endDate. Utilisez le format: Y-m-d',
+                    'status' => 400,
+                    'data' => null
                 ], 400);
             }
         }
@@ -58,19 +64,41 @@ class SearchEventController extends AbstractController
         // Si aucun critère n'est fourni, retourner une erreur
         if (empty($criteria)) {
             return $this->json([
-                'error' => 'Au moins un critère de recherche est requis (category, title, startDate, endDate)'
+                'message' => 'Au moins un critère de recherche est requis (category, title, startDate, endDate)',
+                'status' => 400,
+                'data' => null
             ], 400);
         }
 
         $events = $this->eventRepository->searchEvents($criteria);
+        
+        // Calculer la pagination
+        $totalItems = count($events);
+        $offset = ($page - 1) * $itemsPerPage;
+        $paginatedEvents = array_slice($events, $offset, $itemsPerPage);
 
         // Sérialiser les résultats avec les groupes appropriés
-        $jsonContent = $this->serializer->serialize(
-            $events,
-            'json',
-            ['groups' => ['events:lists']]
+        $serializedEvents = json_decode(
+            $this->serializer->serialize(
+                $paginatedEvents,
+                'json',
+                ['groups' => ['events:lists']]
+            ),
+            true
         );
 
-        return new JsonResponse($jsonContent, 200, [], true);
+        // Formater la réponse
+        $response = [
+            'message' => 'Recherche effectuée avec succès',
+            'status' => 200,
+            'data' => [
+                'itemsTotal' => $totalItems,
+                'currentPage' => $page,
+                'nombreParPage' => $itemsPerPage,
+                'items' => $serializedEvents
+            ]
+        ];
+
+        return $this->json($response, 200);
     }
 }

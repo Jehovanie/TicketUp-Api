@@ -21,7 +21,9 @@ use Symfony\Component\Serializer\Annotation\Groups;
     paginationClientItemsPerPage: true,
     operations: [
         new \ApiPlatform\Metadata\GetCollection(
-            normalizationContext: ["groups" => ['events:lists']],
+            uriTemplate: '/events',
+            controller: \App\Controller\Api\Event\GetEventsController::class,
+            read: false,
         ),
         new \ApiPlatform\Metadata\Get(
             uriTemplate: '/events/search',
@@ -94,7 +96,8 @@ use Symfony\Component\Serializer\Annotation\Groups;
         ),
         new \ApiPlatform\Metadata\Get(
             uriTemplate: '/events/{id}',
-            normalizationContext: ["groups" => ['events:lists', 'events:details']],
+            controller: \App\Controller\Api\Event\GetEventByIdController::class,
+            read: false,
         ),
         new \ApiPlatform\Metadata\Get(
             uriTemplate: '/admin/events/{id}',
