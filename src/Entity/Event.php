@@ -21,11 +21,83 @@ use Symfony\Component\Serializer\Annotation\Groups;
     paginationClientItemsPerPage: true,
     operations: [
         new \ApiPlatform\Metadata\GetCollection(
-            normalizationContext: ["groups" => ['events:lists']],
+            uriTemplate: '/events',
+            controller: \App\Controller\Api\Event\GetEventsController::class,
+            read: false,
+        ),
+        new \ApiPlatform\Metadata\Get(
+            uriTemplate: '/events/search',
+            controller: \App\Controller\Api\Event\SearchEventController::class,
+            read: false,
+            openapi: new OpenApiOperation(
+                summary: 'Rechercher des événements',
+                description: 'Recherche des événements par catégorie, titre et dates',
+                parameters: [
+                    new Parameter(
+                        name: 'category',
+                        in: 'query',
+                        required: false,
+                        description: 'ID de la catégorie',
+                        schema: [
+                            'type' => 'integer'
+                        ]
+                    ),
+                    new Parameter(
+                        name: 'title',
+                        in: 'query',
+                        required: false,
+                        description: 'Titre de l\'événement (recherche partielle)',
+                        schema: [
+                            'type' => 'string'
+                        ]
+                    ),
+                    new Parameter(
+                        name: 'startDate',
+                        in: 'query',
+                        required: false,
+                        description: 'Date de début minimum (format: Y-m-d)',
+                        schema: [
+                            'type' => 'string',
+                            'format' => 'date'
+                        ]
+                    ),
+                    new Parameter(
+                        name: 'endDate',
+                        in: 'query',
+                        required: false,
+                        description: 'Date de début maximum (format: Y-m-d)',
+                        schema: [
+                            'type' => 'string',
+                            'format' => 'date'
+                        ]
+                    )
+                ]
+            )
+        ),
+        new \ApiPlatform\Metadata\Get(
+            uriTemplate: '/events/category/{categoryId}',
+            controller: \App\Controller\Api\Event\GetEventsByCategoryController::class,
+            read: false,
+            openapi: new OpenApiOperation(
+                summary: 'Récupérer les événements par catégorie',
+                description: 'Retourne tous les événements actifs d\'une catégorie spécifique',
+                parameters: [
+                    new Parameter(
+                        name: 'categoryId',
+                        in: 'path',
+                        required: true,
+                        description: 'ID de la catégorie',
+                        schema: [
+                            'type' => 'integer'
+                        ]
+                    )
+                ]
+            )
         ),
         new \ApiPlatform\Metadata\Get(
             uriTemplate: '/events/{id}',
-            normalizationContext: ["groups" => ['events:lists', 'events:details']],
+            controller: \App\Controller\Api\Event\GetEventByIdController::class,
+            read: false,
         ),
         new \ApiPlatform\Metadata\Get(
             uriTemplate: '/admin/events/{id}',
@@ -92,7 +164,7 @@ class Event
     private ?bool $status = null;
 
     #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
-    #[Groups(['events:lists','events:details', 'events:create'])]
+    #[Groups(['events:lists', 'events:details', 'events:create'])]
     private ?Category $category = null;
 
     #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
