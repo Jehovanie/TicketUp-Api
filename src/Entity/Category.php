@@ -13,11 +13,13 @@ use Symfony\Component\Serializer\Annotation\Groups;
 #[ApiResource(
     operations: [
         new \ApiPlatform\Metadata\GetCollection(
-            normalizationContext :  [ "groups" => [ 'category:lists'] ],
+            uriTemplate: '/categories',
+            controller: \App\Controller\Api\Category\GetCategoriesController::class,
+            read: false,
         ),
         new \ApiPlatform\Metadata\Get(
-            uriTemplate:'/category/{id}',
-            normalizationContext :  [ "groups" => [ 'category:details'] ],
+            uriTemplate:'/categories/{id}',
+            normalizationContext :  [ "groups" => [ 'category:lists', 'category:details'] ],
         ),
     ]
 )]
@@ -26,11 +28,11 @@ class Category
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['events:details', 'category:lists'])]
+    #[Groups(['events:lists', 'events:details', 'category:lists'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 100)]
-    #[Groups(['events:details', 'events:create', 'category:lists'])]
+    #[Groups(['events:lists', 'events:details', 'events:create', 'category:lists'])]
     private ?string $name = null;
 
     #[ORM\Column(length: 50)]

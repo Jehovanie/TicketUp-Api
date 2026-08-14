@@ -1,0 +1,7 @@
+gesdinet_jwt_refresh_token:
+    refresh_token_class: App\Entity\RefreshToken
+    ttl: 2592000 # 30 jours
+    user_identity_field: email # selon ton User
+    token_parameter_name: refresh_token
+    # rotation & single-use (optionnel mais recommandé)
+    single_use: true

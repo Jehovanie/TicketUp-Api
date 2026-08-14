@@ -3,9 +3,14 @@
 namespace App\Entity;
 
 use App\Repository\EventRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\OpenApi\Model\Operation as OpenApiOperation;
+use ApiPlatform\OpenApi\Model\Parameter;
+
 use Symfony\Component\Serializer\Annotation\Groups;
 
 
@@ -16,15 +21,107 @@ use Symfony\Component\Serializer\Annotation\Groups;
     paginationClientItemsPerPage: true,
     operations: [
         new \ApiPlatform\Metadata\GetCollection(
-            normalizationContext :  [ "groups" => [ 'events:lists'] ],
+            uriTemplate: '/events',
+            controller: \App\Controller\Api\Event\GetEventsController::class,
+            read: false,
         ),
         new \ApiPlatform\Metadata\Get(
-            uriTemplate:'/events/{id}',
-            normalizationContext :  [ "groups" => [ 'events:lists', 'events:details'] ],
+            uriTemplate: '/events/search',
+            controller: \App\Controller\Api\Event\SearchEventController::class,
+            read: false,
+            openapi: new OpenApiOperation(
+                summary: 'Rechercher des événements',
+                description: 'Recherche des événements par catégorie, titre et dates',
+                parameters: [
+                    new Parameter(
+                        name: 'category',
+                        in: 'query',
+                        required: false,
+                        description: 'ID de la catégorie',
+                        schema: [
+                            'type' => 'integer'
+                        ]
+                    ),
+                    new Parameter(
+                        name: 'title',
+                        in: 'query',
+                        required: false,
+                        description: 'Titre de l\'événement (recherche partielle)',
+                        schema: [
+                            'type' => 'string'
+                        ]
+                    ),
+                    new Parameter(
+                        name: 'startDate',
+                        in: 'query',
+                        required: false,
+                        description: 'Date de début minimum (format: Y-m-d)',
+                        schema: [
+                            'type' => 'string',
+                            'format' => 'date'
+                        ]
+                    ),
+                    new Parameter(
+                        name: 'endDate',
+                        in: 'query',
+                        required: false,
+                        description: 'Date de début maximum (format: Y-m-d)',
+                        schema: [
+                            'type' => 'string',
+                            'format' => 'date'
+                        ]
+                    )
+                ]
+            )
+        ),
+        new \ApiPlatform\Metadata\Get(
+            uriTemplate: '/events/category/{categoryId}',
+            controller: \App\Controller\Api\Event\GetEventsByCategoryController::class,
+            read: false,
+            openapi: new OpenApiOperation(
+                summary: 'Récupérer les événements par catégorie',
+                description: 'Retourne tous les événements actifs d\'une catégorie spécifique',
+                parameters: [
+                    new Parameter(
+                        name: 'categoryId',
+                        in: 'path',
+                        required: true,
+                        description: 'ID de la catégorie',
+                        schema: [
+                            'type' => 'integer'
+                        ]
+                    )
+                ]
+            )
+        ),
+        new \ApiPlatform\Metadata\Get(
+            uriTemplate: '/events/{id}',
+            controller: \App\Controller\Api\Event\GetEventByIdController::class,
+            read: false,
+        ),
+        new \ApiPlatform\Metadata\Get(
+            uriTemplate: '/admin/events/{id}',
+            controller: \App\Controller\Admin\Event\AdminEventDetailsController::class,
+            read: false, // we don’t want to automatically fetch the entity
+            openapi: new OpenApiOperation(
+                summary: 'Get admin details of a specific event',
+                description: 'Custom admin event logic',
+                parameters: [
+                    new Parameter(
+                        name: 'id',
+                        in: 'path',
+                        required: true,
+                        description: 'The ID of the event',
+                        schema: [
+                            'type' => 'integer'
+                        ]
+                    )
+                ]
+            )
         ),
         new \ApiPlatform\Metadata\Post(
-            uriTemplate:'/events',
-            denormalizationContext :  [ "groups" => [ 'events:create'] ],
+            uriTemplate: '/events',
+            denormalizationContext: ["groups" => ['events:create']],
         ),
     ]
 )]
@@ -53,7 +150,7 @@ class Event
     private ?\DateTimeImmutable $endAt = null;
 
     #[ORM\Column(type: Types::ARRAY)]
-    
+
     private array $imageUrl = [];
 
     #[ORM\Column]
@@ -67,7 +164,7 @@ class Event
     private ?bool $status = null;
 
     #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
-    #[Groups(['events:details', 'events:create'])]
+    #[Groups(['events:lists', 'events:details', 'events:create'])]
     private ?Category $category = null;
 
     #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
@@ -80,13 +177,21 @@ class Event
     #[Groups(['events:lists', 'events:create'])]
     private ?Location $location = null;
 
+    /**
+     * @var Collection<int, TicketType>
+     */
+    #[ORM\OneToMany(targetEntity: TicketType::class, mappedBy: 'event', orphanRemoval: true, cascade: ['persist', 'remove'])]
+    #[Groups(['events:lists', 'events:details', 'events:create'])]
+    private Collection $ticket_type;
+
     public function __construct()
     {
         $this->setUpdatedAt(new \DateTimeImmutable());
-        if( $this->getId() === null ) {
+        if ($this->getId() === null) {
             $this->setCreatedAt(new \DateTimeImmutable());
             $this->setStatus(false);
         }
+        $this->ticket_type = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -223,6 +328,36 @@ class Event
     public function setLocation(?Location $location): static
     {
         $this->location = $location;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, TicketType>
+     */
+    public function getTicketType(): Collection
+    {
+        return $this->ticket_type;
+    }
+
+    public function addTicketType(TicketType $ticketType): static
+    {
+        if (!$this->ticket_type->contains($ticketType)) {
+            $this->ticket_type->add($ticketType);
+            $ticketType->setEvent($this);
+        }
+
+        return $this;
+    }
+
+    public function removeTicketType(TicketType $ticketType): static
+    {
+        if ($this->ticket_type->removeElement($ticketType)) {
+            // set the owning side to null (unless already changed)
+            if ($ticketType->getEvent() === $this) {
+                $ticketType->setEvent(null);
+            }
+        }
 
         return $this;
     }

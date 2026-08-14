@@ -1,0 +1,4 @@
+api_register:
+  path: /api/auth/register
+  controller: App\Controller\Auth\RegisterController
+  methods: [POST]
