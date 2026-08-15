@@ -6,7 +6,7 @@ Cette documentation décrit le schéma de la base TicketUp tel qu'il découle **
 
 ## Vue d'ensemble
 
-7 tables, dont les noms sont générés par la stratégie de nommage Doctrine `underscore_number_aware` (configurée dans `config/packages/doctrine.yaml`).
+8 tables, dont les noms sont générés par la stratégie de nommage Doctrine `underscore_number_aware` (configurée dans `config/packages/doctrine.yaml`).
 
 ```mermaid
 erDiagram
@@ -14,7 +14,8 @@ erDiagram
     organizer ||--o{ event       : "1-N"
     location  ||--o{ event       : "1-N"
     event     ||--o{ ticket_type : "1-N (cascade remove)"
-    user
+    user      ||--o{ organizer_membership : "1-N (cascade delete)"
+    organizer ||--o{ organizer_membership : "1-N (cascade delete)"
     refresh_tokens
 ```
 
@@ -33,11 +34,17 @@ erDiagram
                                       └─────────────┘
 
 ┌────────────┐        ┌──────────────────┐
-│   "user"   │        │  refresh_tokens  │   ← aucune FK entre les deux
-└────────────┘        └──────────────────┘      (lien logique par email)
+│   "user"   │────────│ organizer_membership │────── organizer
+└────────────┘   N     └──────────────────────┘  N
+
+┌──────────────────┐
+│  refresh_tokens  │   ← aucune FK (lien logique par email)
+└──────────────────┘
 ```
 
-`event` est la table centrale. **`user` et `refresh_tokens` sont totalement isolés** : aucune clé étrangère ne les relie au reste du modèle.
+`event` est la table centrale. **`refresh_tokens` reste isolé** : aucune clé étrangère ne le relie au modèle (le lien avec `user` est logique, par email).
+
+`user` est rattaché au modèle depuis l'introduction de `organizer_membership` : un utilisateur peut appartenir à plusieurs organisations, avec un rôle dans chacune.
 
 ## Détail des tables
 
@@ -131,6 +138,28 @@ Le nom de table est explicitement entre guillemets (`#[ORM\Table(name: '`user`')
 Contrairement aux autres entités, `User` utilise des lifecycle callbacks (`#[ORM\HasLifecycleCallbacks]`, `onPrePersist` / `onPreUpdate`) : `updated_at` y est donc bien maintenu à jour, et `language` reçoit sa valeur par défaut à l'insertion. `setEmail()` normalise l'email en minuscules et le trim.
 
 `getRoles()` ajoute toujours `ROLE_USER` à la lecture ; ce rôle n'est pas forcément stocké en base.
+
+### `organizer_membership` — `src/Entity/OrganizerMembership.php`
+
+Table de liaison **portée par une entité** (et non un `ManyToMany` simple) : la relation transporte un rôle et une date d'entrée.
+
+| Colonne | Type | Contrainte |
+|---|---|---|
+| `id` | INT identity | PK |
+| `user_id` | INT | FK → `"user"(id)`, NOT NULL, `ON DELETE CASCADE` |
+| `organizer_id` | INT | FK → `organizer(id)`, NOT NULL, `ON DELETE CASCADE` |
+| `role` | VARCHAR(20) | NOT NULL — `owner` \| `admin` \| `member` (enum PHP `App\Enum\OrganizerRole`) |
+| `created_at` | TIMESTAMP | NOT NULL |
+| `updated_at` | TIMESTAMP | NOT NULL |
+
+Index :
+
+- `uniq_membership_user_organizer` (UNIQUE sur `user_id`, `organizer_id`) — **un seul rôle par organisation**. Pour autoriser le cumul de rôles, étendre la contrainte à (`user_id`, `organizer_id`, `role`).
+- `idx_membership_organizer_role` (`organizer_id`, `role`) — recherche des responsables d'une organisation.
+
+Invariant applicatif (non exprimable en SQL, garanti par `OrganizerMembershipService`) : **une organisation conserve toujours au moins un `owner`**.
+
+Le rôle global `ROLE_SUPER_ADMIN` (colonne `user.roles`) est indépendant de cette table : il donne accès à toutes les organisations.
 
 ### `refresh_tokens` — `src/Entity/RefreshToken.php`
 

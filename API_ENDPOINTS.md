@@ -18,6 +18,7 @@ Toutes les routes métier sont préfixées par `/api` (préfixe posé par `confi
 | POST | `/api/auth/refresh` | publique | Renouveler l'access token | bundle Gesdinet |
 | GET | `/api/user/me` | **JWT requis** | Profil de l'utilisateur connecté | `Api\MeController` |
 | GET | `/api/events` | anonyme | Liste paginée des événements | `Api\Event\GetEventsController` |
+| GET | `/api/events/me` | **authentifié** | Événements de mes organisations | `Api\Event\GetMyEventsController` |
 | GET | `/api/events/search` | anonyme | Recherche multi-critères | `Api\Event\SearchEventController` |
 | GET | `/api/events/category/{categoryId}` | anonyme | Événements publiés d'une catégorie | `Api\Event\GetEventsByCategoryController` |
 | GET | `/api/events/{id}` | anonyme | Détail d'un événement | `Api\Event\GetEventByIdController` |
@@ -28,6 +29,8 @@ Toutes les routes métier sont préfixées par `/api` (préfixe posé par `confi
 | GET | `/api/locations` | anonyme | Liste des lieux | provider API Platform |
 | GET | `/api/location/{id}` | anonyme | Détail d'un lieu | provider API Platform |
 | GET | `/api/organizers` | anonyme | Liste des organisateurs | provider API Platform |
+| POST | `/api/organizers` | **authentifié** | Créer une organisation (créateur = responsable) | `Api\Organizer\CreateOrganizerController` |
+| GET | `/api/organizers/me` | **authentifié** | Mes organisations, vue réduite + rôle | `Api\Membership\GetMyOrganizersController` |
 | GET | `/api/organizer/{id}` | anonyme | Détail d'un organisateur | provider API Platform |
 | GET | `/api/docs` | anonyme | Documentation OpenAPI / Swagger UI | API Platform |
 
@@ -152,6 +155,21 @@ La pagination est calculée à la main dans le contrôleur (`count()` + `findBy(
 
 Groupe de sérialisation : `events:lists` → `id`, `title`, `startedAt`, `endAt`, `status`, `category`, `location`, `ticket_type`.
 
+### `GET /api/events/me`
+
+**Authentification requise** (`Authorization: Bearer <token>`).
+
+Réponse **strictement identique** à `/api/events` — mêmes champs (`events:lists`), même enveloppe, mêmes paramètres `page` / `itemsPerPage`, même tri `createdAt` décroissant. Seul l'ensemble listé change : les événements portés par les organisations dont l'appelant est membre.
+
+Le lien est indirect. Un événement n'a pas d'auteur : il appartient à une organisation (`event.organizer_id`, non nul), et c'est `OrganizerMembership` qui rattache la personne à cette organisation. `EventRepository::findByUser()` traverse donc `Event → Organizer → OrganizerMembership → User`. L'unicité (utilisateur, organisation) garantit une seule ligne d'appartenance par organisation : aucun doublon d'événement, pas de `DISTINCT`.
+
+Conséquences pratiques :
+
+- Le rôle (`owner`, `admin`, `member`) **ne filtre rien** : tout membre voit les événements de son organisation. Restreindre par rôle demanderait un `andWhere` sur `m.role`.
+- Une personne membre de plusieurs organisations reçoit l'**union** de leurs événements, sans distinction d'origine — `organizer` appartient au groupe `events:details`, absent de cette liste.
+- **Pas de filtre sur `status`**, comme `/api/events` : les brouillons de son organisation restent visibles, ce qui est le but d'une vue de gestion.
+- `ROLE_SUPER_ADMIN` n'y change rien : ce rôle global ouvre les droits mais ne crée pas d'appartenance, donc un super administrateur membre de rien reçoit `items: []`. L'inventaire complet, c'est `/api/events`.
+
 ### `GET /api/events/search`
 
 Recherche multi-critères. Documenté en détail dans `API_RECHERCHE_EVENTS.md`.
@@ -181,6 +199,8 @@ Tous les événements publiés (`status = true`) d'une catégorie, triés par `s
 ### `GET /api/events/{id}`
 
 Détail d'un événement, groupes `events:lists` + `events:details` (ajoute `description`, `organizer`, les timestamps des billets…). Renvoie `404` avec l'enveloppe (`{"message": "Événement non trouvé", "status": 404, "data": null}`) si l'identifiant n'existe pas.
+
+L'opération porte `requirements: ['id' => '\d+']`. Sans cette contrainte, `/events/{id}` attrape tout ce qui suit `/events/` et les routes littérales (`/events/me`, `/events/search`) ne tiennent que par leur ordre de déclaration. Effet de bord : un identifiant non numérique (`/api/events/abc`) donne un `404` de routage — page d'erreur Symfony, sans l'enveloppe — au lieu du `404` enveloppé du contrôleur.
 
 ### `POST /api/events`
 
@@ -262,7 +282,47 @@ Providers natifs d'API Platform, réponse JSON-LD paginée. Groupes `location:li
 
 Même fonctionnement. Groupes `organizer:lists` (`id`, `name`, `email`) et `organizer:details` (`phone`, `website`, timestamps). Même incohérence pluriel/singulier.
 
-Il n'existe **aucun endpoint d'écriture** pour les catégories, lieux et organisateurs : ils ne peuvent être créés qu'indirectement, via le payload imbriqué de `POST /api/events`.
+Il n'existe **aucun endpoint d'écriture** pour les catégories et les lieux : ils ne peuvent être créés qu'indirectement, via le payload imbriqué de `POST /api/events`.
+
+### `POST /api/organizers`
+
+**Authentification requise.** Seule façon de créer une organisation *gérable* : le créateur est rattaché comme **responsable** dans la foulée. Créée par le payload imbriqué de `POST /api/events`, elle n'a aucun membre — donc elle n'apparaît dans aucun `/me` et personne n'a de droits dessus.
+
+```json
+{ "name": "Antsika Prod", "email": "contact@antsika.mg", "phone": "+261 34 …", "website": "https://antsika.mg" }
+```
+
+`name` et `email` sont obligatoires ; `phone` et `website` facultatifs. L'email est normalisé en minuscules. Réponse `201`, `data` au format « organisation d'un utilisateur » — identique aux `items` de `/api/user/me/organizations`, `role` compris.
+
+L'entité ne portant aucune contrainte de validation, elles sont faites par le contrôleur (`OrganizerException`, `400`) : champ vide, longueur au-delà de la colonne, email ou URL malformés. La création est transactionnelle — un échec du rattachement ne laisse pas d'organisation sans responsable.
+
+⚠️ La colonne `email` **n'est pas unique** en base : deux organisations peuvent partager une adresse, et l'endpoint ne l'interdit pas.
+
+### `GET /api/organizers/me`
+
+**Authentification requise** (`Authorization: Bearer <token>`) — c'est, avec `/api/user`, l'un des rares endpoints réellement protégés.
+
+Organisations auxquelles l'utilisateur connecté appartient, avec son rôle dans chacune. Contrairement à `/api/organizers`, qui liste tout le monde en JSON-LD, celui-ci passe par un contrôleur (`Api\Membership\GetMyOrganizersController`) : enveloppe maison, pagination manuelle (`page`, `itemsPerPage`, plafonné à 20), et vue réduite — pas de coordonnées ni de timestamps.
+
+```json
+{
+  "message": "Organisations de l’utilisateur récupérées avec succès",
+  "status": 200,
+  "data": {
+    "itemsTotal": 2,
+    "currentPage": 1,
+    "nombreParPage": 10,
+    "items": [
+      { "id": 2, "name": "Madagascar Events", "role": "owner", "roleLabel": "Responsable", "isOwner": true },
+      { "id": 1, "name": "Tech Madagascar", "role": "owner", "roleLabel": "Responsable", "isOwner": true }
+    ]
+  }
+}
+```
+
+Triées par nom d'organisation. `ROLE_SUPER_ADMIN` ne change rien ici : ce rôle global ouvre tous les droits mais ne crée aucune appartenance, donc un super administrateur membre d'aucune organisation reçoit `items: []`.
+
+Pour la même liste avec les coordonnées, la date d'entrée et le drapeau `isSuperAdmin`, voir `GET /api/user/me/organizations`.
 
 ---
 

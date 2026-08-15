@@ -25,6 +25,37 @@ use Symfony\Component\Serializer\Annotation\Groups;
             controller: \App\Controller\Api\Event\GetEventsController::class,
             read: false,
         ),
+        // Mes événements. Déclaré avant `/events/{id}` — sinon « me » serait pris
+        // pour un identifiant (le contrainte `\d+` posée plus bas rend d'ailleurs
+        // l'ordre non critique, mais les deux gardes valent mieux qu'une).
+        new \ApiPlatform\Metadata\GetCollection(
+            uriTemplate: '/events/me',
+            controller: \App\Controller\Api\Event\GetMyEventsController::class,
+            read: false,
+            paginationEnabled: false,
+            openapi: new OpenApiOperation(
+                summary: 'Mes événements',
+                description: "Événements portés par les organisations dont l'utilisateur connecté est membre. "
+                    . "Même réponse que `/api/events`, restreinte à ce qui le concerne — brouillons compris. "
+                    . "Requiert un jeton JWT ; répond `401` sans authentification.",
+                parameters: [
+                    new Parameter(
+                        name: 'page',
+                        in: 'query',
+                        required: false,
+                        description: 'Numéro de page (défaut : 1)',
+                        schema: ['type' => 'integer', 'default' => 1]
+                    ),
+                    new Parameter(
+                        name: 'itemsPerPage',
+                        in: 'query',
+                        required: false,
+                        description: 'Nombre d’éléments par page (défaut : 10, maximum : 20)',
+                        schema: ['type' => 'integer', 'default' => 10, 'maximum' => 20]
+                    ),
+                ]
+            ),
+        ),
         new \ApiPlatform\Metadata\Get(
             uriTemplate: '/events/search',
             controller: \App\Controller\Api\Event\SearchEventController::class,
@@ -98,6 +129,10 @@ use Symfony\Component\Serializer\Annotation\Groups;
             uriTemplate: '/events/{id}',
             controller: \App\Controller\Api\Event\GetEventByIdController::class,
             read: false,
+            // Sans cette contrainte, `/events/{id}` attrape tout ce qui suit
+            // `/events/` : les routes littérales (`/events/me`, `/events/search`)
+            // ne s'en sortaient que par leur ordre de déclaration.
+            requirements: ['id' => '\d+'],
         ),
         new \ApiPlatform\Metadata\Get(
             uriTemplate: '/admin/events/{id}',

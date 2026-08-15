@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Event;
+use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -94,5 +95,53 @@ class EventRepository extends ServiceEntityRepository
         $qb->orderBy('e.startedAt', 'DESC');
 
         return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * Événements des organisations auxquelles l'utilisateur appartient.
+     *
+     * Le lien n'est pas direct : un événement appartient à une organisation, et
+     * c'est `OrganizerMembership` qui rattache la personne à cette organisation.
+     * D'où la double jointure. L'unicité (utilisateur, organisation) garantit une
+     * seule ligne d'appartenance par organisation : pas de doublon d'événement,
+     * donc pas de `DISTINCT` à payer.
+     *
+     * Aucun filtre sur `status` : c'est une vue de gestion, les brouillons de son
+     * organisation doivent rester visibles à celui qui les a écrits.
+     *
+     * @return Event[]
+     */
+    public function findByUser(User $user, ?int $limit = null, int $offset = 0): array
+    {
+        // Catégorie et lieu sont dans le groupe `events:lists` : les charger ici
+        // évite deux requêtes par événement au moment de la sérialisation. Les
+        // billets, eux, sont une collection — la joindre fausserait `setMaxResults`.
+        $qb = $this->createQueryBuilder('e')
+            ->addSelect('c', 'l')
+            ->leftJoin('e.category', 'c')
+            ->leftJoin('e.location', 'l')
+            ->join('e.organizer', 'o')
+            ->join('o.memberships', 'm')
+            ->andWhere('m.user = :user')
+            ->setParameter('user', $user)
+            ->orderBy('e.createdAt', 'DESC');
+
+        if ($limit !== null) {
+            $qb->setMaxResults($limit)->setFirstResult(max(0, $offset));
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
+    public function countByUser(User $user): int
+    {
+        return (int) $this->createQueryBuilder('e')
+            ->select('COUNT(e.id)')
+            ->join('e.organizer', 'o')
+            ->join('o.memberships', 'm')
+            ->andWhere('m.user = :user')
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->getSingleScalarResult();
     }
 }

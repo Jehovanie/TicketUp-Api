@@ -2,7 +2,10 @@
 
 namespace App\Entity;
 
+use App\Enum\OrganizerRole;
 use App\Repository\UserRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
@@ -17,6 +20,12 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\HasLifecycleCallbacks]
 class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
+    /**
+     * Rôle global, indépendant des organisations : le fondateur de la
+     * plateforme. Il court-circuite les contrôles d'appartenance.
+     */
+    public const ROLE_SUPER_ADMIN = 'ROLE_SUPER_ADMIN';
+
     #[ORM\Id, ORM\GeneratedValue, ORM\Column]
     private ?int $id = null;
 
@@ -58,11 +67,25 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: Types::DATETIME_MUTABLE, nullable: true)]
     private ?\DateTimeInterface $is_active = null;
 
+    /**
+     * Organisations auxquelles l'utilisateur appartient, avec son rôle dans
+     * chacune. Un même utilisateur peut en diriger plusieurs.
+     *
+     * @var Collection<int, OrganizerMembership>
+     */
+    #[ORM\OneToMany(mappedBy: 'user', targetEntity: OrganizerMembership::class, cascade: ['persist'], orphanRemoval: true)]
+    private Collection $memberships;
+
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
 
     #[ORM\Column]
     private ?\DateTimeImmutable $updatedAt = null;
+
+    public function __construct()
+    {
+        $this->memberships = new ArrayCollection();
+    }
 
     public function getId(): ?int
     {
@@ -181,6 +204,84 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     {
         $this->updatedAt = $updatedAt;
         return $this;
+    }
+
+    // ------------------------------------------------- Organisations / rôles
+
+    /** @return Collection<int, OrganizerMembership> */
+    public function getMemberships(): Collection
+    {
+        return $this->memberships;
+    }
+
+    public function addMembership(OrganizerMembership $membership): static
+    {
+        if (!$this->memberships->contains($membership)) {
+            $this->memberships->add($membership);
+            $membership->setUser($this);
+        }
+
+        return $this;
+    }
+
+    public function removeMembership(OrganizerMembership $membership): static
+    {
+        if ($this->memberships->removeElement($membership) && $membership->getUser() === $this) {
+            $membership->setUser(null);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Organisations de l'utilisateur.
+     *
+     * @return Organizer[]
+     */
+    public function getOrganizers(): array
+    {
+        return array_values(array_filter(
+            $this->memberships->map(static fn (OrganizerMembership $m) => $m->getOrganizer())->toArray()
+        ));
+    }
+
+    public function getMembershipFor(Organizer $organizer): ?OrganizerMembership
+    {
+        foreach ($this->memberships as $membership) {
+            if ($membership->getOrganizer()?->getId() === $organizer->getId()) {
+                return $membership;
+            }
+        }
+
+        return null;
+    }
+
+    public function getRoleIn(Organizer $organizer): ?OrganizerRole
+    {
+        return $this->getMembershipFor($organizer)?->getRole();
+    }
+
+    public function isMemberOf(Organizer $organizer): bool
+    {
+        return $this->getMembershipFor($organizer) !== null;
+    }
+
+    /**
+     * Vrai si l'utilisateur atteint au moins ce niveau dans l'organisation.
+     * Le super administrateur passe partout : c'est le fondateur du site.
+     */
+    public function hasRoleIn(Organizer $organizer, OrganizerRole $minimum): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        return (bool) $this->getRoleIn($organizer)?->isAtLeast($minimum);
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return in_array(self::ROLE_SUPER_ADMIN, $this->getRoles(), true);
     }
 
     #[ORM\PrePersist]
