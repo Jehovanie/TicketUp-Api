@@ -10,6 +10,16 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 class MeController extends AbstractController
 {
+
+    #[Route('/api/health', name: 'api_health_check', methods: ['GET'])]
+    public function healthCheck(): JsonResponse
+    {
+        return $this->json([
+            'message'        => "Service is up and running",
+            'status'     => "OK",
+        ]);
+    }
+
     #[Route('/api/user/me', name: 'api_me', methods: ['GET'])]
     #[IsGranted('ROLE_USER')]
     public function __invoke(): JsonResponse
