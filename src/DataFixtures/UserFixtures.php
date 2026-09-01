@@ -19,10 +19,10 @@ class UserFixtures extends Fixture
     public const REFERENCE_PREFIX = 'user_';
 
     /** Mot de passe commun à tous les comptes de démonstration. */
-    public const PASSWORD = 'Password123!';
+    public const PASSWORD = '12345678';
 
     public const FONDATEUR = 'admin@ticketup.mg';
-    public const DIRIGEANT = 'hery.rakoto@techmada.mg';
+    public const DIRIGEANT = 'jheo.ram@techmada.mg';
 
     /** Email => [prénom, nom, téléphone, rôles globaux]. */
     private const USERS = [
@@ -31,7 +31,7 @@ class UserFixtures extends Fixture
         self::FONDATEUR => ['Fondateur', 'TicketUp', '+261 34 00 000 01', [User::ROLE_SUPER_ADMIN]],
 
         // Dirige deux structures indépendantes.
-        self::DIRIGEANT => ['Hery', 'Rakoto', '+261 34 00 000 02', []],
+        self::DIRIGEANT => ['Jehovanie', 'Ramandrijoel', '+261 34 00 000 02', []],
 
         'lova.randria@techmada.mg' => ['Lova', 'Randrianasolo', '+261 34 00 000 03', []],
         'mamy.rabe@techmada.mg' => ['Mamy', 'Rabemananjara', '+261 34 00 000 04', []],
