@@ -1,5 +1,9 @@
 # Référence des endpoints de l'API TicketUp
 
+> **Dernière mise à jour : 23 octobre 2026.**
+> Inventaire repris route par route depuis `php bin/console debug:router` et le code des contrôleurs : **26 endpoints métier**, auxquels s'ajoutent les routes techniques d'API Platform.
+> Ajouts de cette révision : `GET /api/health`, `GET /api/user/me/organizations` et les cinq endpoints de gestion des membres, qui existaient dans le code sans être documentés — ici **et** dans `/api/docs`, où ils n'apparaissaient pas non plus.
+
 Liste complète des routes exposées par l'API, leur fonctionnement interne et leur format de réponse.
 Liste vérifiable à tout moment avec :
 
@@ -16,7 +20,9 @@ Toutes les routes métier sont préfixées par `/api` (préfixe posé par `confi
 | POST | `/api/auth/register` | publique | Créer un compte + délivrer les tokens | `Auth\RegisterController` |
 | POST | `/api/auth/login` | publique | Authentifier (email/mot de passe) | firewall `json_login` |
 | POST | `/api/auth/refresh` | publique | Renouveler l'access token | bundle Gesdinet |
+| GET | `/api/health` | anonyme | Sonde de disponibilité du service | `Api\MeController::healthCheck()` |
 | GET | `/api/user/me` | **JWT requis** | Profil de l'utilisateur connecté | `Api\MeController` |
+| GET | `/api/user/me/organizations` | **authentifié** | Mes organisations, vue complète + `isSuperAdmin` | `Api\Membership\GetMyOrganizationsController` |
 | GET | `/api/events` | anonyme | Liste paginée des événements | `Api\Event\GetEventsController` |
 | GET | `/api/events/me` | **authentifié** | Événements de mes organisations | `Api\Event\GetMyEventsController` |
 | GET | `/api/events/search` | anonyme | Recherche multi-critères | `Api\Event\SearchEventController` |
@@ -32,9 +38,16 @@ Toutes les routes métier sont préfixées par `/api` (préfixe posé par `confi
 | POST | `/api/organizers` | **authentifié** | Créer une organisation (créateur = responsable) | `Api\Organizer\CreateOrganizerController` |
 | GET | `/api/organizers/me` | **authentifié** | Mes organisations, vue réduite + rôle | `Api\Membership\GetMyOrganizersController` |
 | GET | `/api/organizer/{id}` | anonyme | Détail d'un organisateur | provider API Platform |
+| GET | `/api/organizers/{organizerId}/members` | **VIEW** | Membres d'une organisation | `Api\Membership\GetOrganizerMembersController` |
+| POST | `/api/organizers/{organizerId}/members` | **MANAGE_MEMBERS** | Rattacher un utilisateur (OWNER si `role=owner`) | `Api\Membership\AddOrganizerMemberController` |
+| PATCH · PUT | `/api/organizers/{organizerId}/members/{userId}` | **MANAGE_MEMBERS** | Changer le rôle d'un membre | `Api\Membership\UpdateOrganizerMemberRoleController` |
+| DELETE | `/api/organizers/{organizerId}/members/{userId}` | **MANAGE_MEMBERS** | Retirer un membre | `Api\Membership\RemoveOrganizerMemberController` |
+| PUT | `/api/organizers/{organizerId}/owner` | **TRANSFER_OWNERSHIP** | Désigner un nouveau responsable | `Api\Membership\TransferOrganizerOwnershipController` |
 | GET | `/api/docs` | anonyme | Documentation OpenAPI / Swagger UI | API Platform |
 
-> ⚠️ **« anonyme » n'est pas un oubli de documentation, c'est l'état réel.** `config/packages/security.yaml` ne protège explicitement que `/api/user`. Le firewall `^/api` est en `jwt: ~` sans `access_control` associé, donc toutes les autres routes — y compris `POST /api/events` et `/api/admin/events/{id}` — sont accessibles **sans token**.
+> ⚠️ **« anonyme » n'est pas un oubli de documentation, c'est l'état réel.** `config/packages/security.yaml` ne protège explicitement que `/api/user`. Le firewall `^/api` est en `jwt: ~` sans `access_control` associé, donc toutes les routes non listées ci-dessous sont accessibles **sans token** — y compris `POST /api/events` et `/api/admin/events/{id}`.
+>
+> La protection réelle ne vient donc pas d'`access_control` mais des attributs posés dans les contrôleurs. Les seuls endpoints qui exigent un jeton sont : `GET /api/user/me`, `GET /api/user/me/organizations`, `GET /api/events/me`, `GET /api/organizers/me`, `POST /api/organizers` (tous en `#[IsGranted('ROLE_USER')]`) et les cinq endpoints de membres, qui ajoutent un contrôle de droit par `OrganizerVoter`. Deux conséquences : l'inventaire des endpoints protégés se lit dans le code, pas dans la configuration ; et un `access_control` oublié sur une nouvelle route la laisse publique par défaut.
 
 ## Deux formats de réponse coexistent
 
@@ -57,6 +70,22 @@ C'est le point le plus déroutant de cette API : selon l'endpoint, la réponse n
 ```
 
 Un client peut demander du JSON simple via l'en-tête `Accept: application/json` (formats activés : `jsonld`, `json`, `jsonhal`).
+
+---
+
+## Santé du service
+
+### `GET /api/health`
+
+Sonde de disponibilité, déclarée par un `#[Route]` dans `MeController` (à côté de `/api/user/me`, dont elle ne partage ni la logique ni les protections). Accessible **sans token**.
+
+```json
+{ "message": "Service is up and running", "status": "OK" }
+```
+
+⚠️ Deux réserves pour un usage en supervision :
+- `status` vaut la **chaîne** `"OK"`, et non un entier comme dans l'enveloppe maison du reste de l'API — un client qui teste `status === 200` échouera ;
+- la sonde ne vérifie **rien** : ni la base de données, ni les clés JWT. Elle répond `200` dès que PHP et le noyau Symfony démarrent, donc une base injoignable la laisse verte. Une sonde utile pour un orchestrateur demanderait un `SELECT 1` et un code `503` en cas d'échec.
 
 ---
 
@@ -120,7 +149,7 @@ Renvoie un nouveau couple `token` / `refresh_token`. La configuration est en `si
 
 ### `GET /api/user/me`
 
-Seul endpoint réellement protégé (`#[IsGranted('ROLE_USER')]` + règle `access_control` sur `^/api/user`). Nécessite l'en-tête :
+Seul endpoint protégé **à la fois** par un attribut (`#[IsGranted('ROLE_USER')]`) et par une règle `access_control` (`^/api/user`) ; les autres endpoints authentifiés ne tiennent que par leur attribut. Nécessite l'en-tête :
 
 ```
 Authorization: Bearer <token>
@@ -324,17 +353,168 @@ Triées par nom d'organisation. `ROLE_SUPER_ADMIN` ne change rien ici : ce rôle
 
 Pour la même liste avec les coordonnées, la date d'entrée et le drapeau `isSuperAdmin`, voir `GET /api/user/me/organizations`.
 
+### `GET /api/user/me/organizations`
+
+**Authentification requise.** Même question que `/api/organizers/me`, charge utile différente : la fiche complète de chaque organisation (coordonnées, date d'entrée) et le drapeau `isSuperAdmin`, **sans pagination**.
+
+Le choix entre les deux est donc fonctionnel : `/api/organizers/me` pour un sélecteur d'organisation (vue réduite, paginée), celui-ci pour un écran « mes organisations » qui affiche les coordonnées. Les deux lisent le même service (`OrganizerMembershipService::membershipsOf()`) et le même formateur (`MembershipPresenter`) : faire évoluer une vue se fait dans `organizationSummary()` / `organization()`, pas dans les contrôleurs.
+
+```json
+{
+  "message": "Organisations de l’utilisateur récupérées avec succès",
+  "status": 200,
+  "data": {
+    "itemsTotal": 2,
+    "isSuperAdmin": false,
+    "items": [
+      {
+        "id": 2, "name": "Madagascar Events", "email": "contact@madagascar-events.mg",
+        "phone": "+261 34 …", "website": "https://madagascar-events.mg",
+        "role": "owner", "roleLabel": "Responsable", "isOwner": true,
+        "joinedAt": "2026-03-04T09:12:00+00:00"
+      }
+    ]
+  }
+}
+```
+
+Noter que `data` ne porte **ni `currentPage` ni `nombreParPage`** ici : la forme de l'enveloppe collection n'est pas tout à fait celle du reste de l'API. Triées par nom d'organisation.
+
+---
+
+## Membres d'une organisation
+
+Cinq endpoints, écrits en contrôleurs Symfony classiques (`src/Controller/Api/Membership/`) et **hors du pipeline API Platform** : ce sont des écritures à corps libre, qui ne correspondent à aucune ressource. Ils sont malgré tout décrits dans `/api/docs`, par le décorateur `src/OpenApi/UndocumentedEndpointsFactory.php` (voir « D'où vient `/api/docs` » plus bas).
+
+La relation utilisateur ↔ organisation est un many-to-many porté par `OrganizerMembership` (`user`, `organizer`, `role`), avec unicité sur (user, organizer) : **un rôle par organisation**, et une même personne peut diriger plusieurs organisations indépendantes.
+
+**Rôles** (`App\Enum\OrganizerRole`), hiérarchiques :
+
+| Valeur | `roleLabel` | Niveau | Peut |
+|---|---|---|---|
+| `owner` | Responsable | 30 | tout, y compris désigner un responsable |
+| `admin` | Administrateur | 20 | gérer l'organisation et ses membres |
+| `member` | Membre | 10 | consulter |
+
+Les contrôles s'expriment en « au moins ce niveau » (`isAtLeast()`). La saisie est tolérante : `OWNER`, `owner`, ` Owner ` sont acceptés (`fromInput()`).
+
+**Droits** (`OrganizerVoter`) : `VIEW` = member+, `EDIT` / `MANAGE_MEMBERS` = admin+, `TRANSFER_OWNERSHIP` = owner. `ROLE_SUPER_ADMIN` court-circuite tous ces contrôles (`User::isSuperAdmin()`, testé en premier) — mais **ne crée aucune appartenance** : un super administrateur membre de rien reçoit `items: []` sur les endpoints en `/me`.
+
+**Toutes les écritures passent par `OrganizerMembershipService`**, qui tient l'invariant « une organisation garde toujours au moins un responsable ». N'écrivez pas de `OrganizerMembership` depuis un contrôleur.
+
+### `GET /api/organizers/{organizerId}/members`
+
+Droit **VIEW** (member+). Membres de l'organisation, **responsables en tête** (tri par niveau de rôle décroissant, puis par nom de famille). Pas de pagination.
+
+```json
+{
+  "message": "Membres de l’organisation récupérés avec succès",
+  "status": 200,
+  "data": {
+    "organizer": { "id": 1, "name": "Tech Madagascar" },
+    "itemsTotal": 3,
+    "items": [
+      {
+        "userId": 2, "email": "hery.rakoto@techmada.mg", "firstname": "Hery", "lastname": "Rakoto",
+        "phone": "+261 34 …", "role": "owner", "roleLabel": "Responsable", "isOwner": true,
+        "joinedAt": "2026-03-04T09:12:00+00:00"
+      }
+    ]
+  }
+}
+```
+
+Le tri par rôle est fait **en PHP** (`usort` après la requête) et non en SQL : `role` est stocké en chaîne, son ordre alphabétique (`admin` < `member` < `owner`) ne correspond pas à la hiérarchie. Sans pagination l'effet est négligeable ; il faudrait une colonne de niveau pour trier en base.
+
+### `POST /api/organizers/{organizerId}/members`
+
+Droit **MANAGE_MEMBERS** (admin+), et **TRANSFER_OWNERSHIP** (owner) si le `role` demandé est `owner` : seul un responsable peut en désigner un autre.
+
+```json
+{ "userId": 3, "role": "admin" }
+```
+
+L'utilisateur se désigne par `userId` **ou** par `email` (au choix de l'appelant) ; `role` est facultatif et vaut `member` par défaut. L'opération est **idempotente** : rejouer l'appel sur un membre existant met simplement son rôle à jour (toujours `201`, jamais de doublon — l'unicité (user, organizer) l'interdit).
+
+Réponse `201`, `data` au format « membre » (identique aux `items` ci-dessus).
+
+### `PATCH` · `PUT /api/organizers/{organizerId}/members/{userId}`
+
+Droit **MANAGE_MEMBERS**, plus **TRANSFER_OWNERSHIP** dès qu'un responsable est concerné — en promotion (`role: "owner"`) comme en rétrogradation (la cible est déjà responsable).
+
+```json
+{ "role": "member" }
+```
+
+`role` est ici **obligatoire** (absent → `400`, « Rôle « » inconnu »), contrairement au `POST`. Rétrograder le **dernier** responsable renvoie `409` : il faut d'abord en désigner un autre. Un rôle identique à l'actuel est accepté sans écriture.
+
+⚠️ `PATCH` n'est pas dans `allow_methods` de `nelmio_cors.yaml` : depuis un navigateur, la préflight échoue et seul `PUT` fonctionne. Les deux verbes sont pourtant acceptés par la route — à utiliser en `PUT` côté client web, ou à corriger dans la configuration CORS.
+
+### `DELETE /api/organizers/{organizerId}/members/{userId}`
+
+Droit **MANAGE_MEMBERS**, plus **TRANSFER_OWNERSHIP** si la cible est responsable. Retirer le **dernier** responsable renvoie `409`.
+
+```json
+{ "message": "mamy.rabe@techmada.mg a été retiré de Tech Madagascar.", "status": 200, "data": null }
+```
+
+Retirer une personne supprime son appartenance, donc son rôle — mais **pas son compte**, ni les événements de l'organisation (ils appartiennent à l'organisation, pas à la personne).
+
+### `PUT /api/organizers/{organizerId}/owner`
+
+Droit **TRANSFER_OWNERSHIP** (owner, ou super administrateur).
+
+```json
+{ "userId": 4, "demoteTo": "admin" }
+```
+
+- cible par `userId` ou `email`, rattachée à l'organisation si elle ne l'était pas encore ;
+- `demoteTo` décide du sort des anciens responsables : `admin` par défaut (ils gardent la main sur l'organisation qu'ils ont dirigée), une autre valeur de rôle, ou **`null` explicite** pour les conserver **co-responsables** ;
+- la promotion est appliquée **avant** les rétrogradations : l'organisation n'est à aucun moment sans responsable.
+
+Réponse `200` : `data.owner` (le nouveau responsable) et `data.members` (la liste à jour).
+
+### Erreurs métier communes
+
+Ces endpoints lèvent des exceptions qui étendent `BusinessException` ; `BusinessExceptionSubscriber` les rend dans l'enveloppe maison (`{message, status, data: null}`) avec leur propre code HTTP. C'est le seul endroit de l'API où les erreurs sont traitées proprement.
+
+| Cas | Code | Message |
+|---|---|---|
+| Organisation inconnue | `404` | `Organisation introuvable (id: 99).` |
+| Utilisateur inconnu | `404` | `Utilisateur introuvable (…).` |
+| Ni `userId` ni `email` fourni | `404` | `Utilisateur introuvable (renseignez « userId » ou « email »).` |
+| La personne n'est pas membre | `404` | `… ne fait pas partie de ….` |
+| Rôle invalide ou absent | `400` | `Rôle « … » inconnu. Valeurs acceptées : owner, admin, member.` |
+| Dernier responsable | `409` | `Impossible : … doit conserver au moins un responsable. …` |
+| Droit manquant | `403` | réponse de `denyAccessUnlessGranted` (hors enveloppe) |
+
+⚠️ Le `403` est la seule exception : il vient de `denyAccessUnlessGranted()`, pas de `MembershipException`, donc il n'est **pas** enveloppé (`MembershipException::accesRefuse()` existe mais n'est utilisée nulle part). Noter aussi qu'une entrée malformée (`userId` inexistant, `email` vide) remonte en `404` et non en `400` — toutes les résolutions d'entité partagent le même message.
+
+### Amorçage par la console
+
+Une organisation sans membre est **inaccessible via l'API** : le droit découle de l'appartenance, donc personne ne peut s'y rattacher. C'est le cas de celles créées par le payload imbriqué de `POST /api/events`. Il faut alors passer par la console :
+
+```bash
+php bin/console app:organizer:member list|assign|revoke|transfer|organizations \
+  -o <id|nom> -u <id|email> -r owner|admin|member [--keep-owners]
+php bin/console app:user:super-admin <email> [--revoke]
+```
+
+`-o` accepte l'identifiant **ou** le nom exact de l'organisation, `-u` l'identifiant ou l'email ; `--keep-owners` est l'équivalent console du `demoteTo: null` de l'endpoint de transfert.
+
 ---
 
 ## Routes techniques
 
 | Chemin | Rôle |
 |---|---|
-| `/api/docs` | Documentation OpenAPI (Swagger UI en HTML, JSON avec `Accept: application/json`) |
+| `/api/docs` | Documentation OpenAPI (Swagger UI en HTML, document brut avec `Accept: application/vnd.openapi+json`) |
 | `/api` | Point d'entrée Hydra listant les ressources |
 | `/api/contexts/{shortName}` | Contextes JSON-LD |
 | `/api/errors/{status}`, `/api/validation_errors/{id}` | Représentation des erreurs API Platform |
 | `/_error/{code}` | Prévisualisation des pages d'erreur (environnement `dev` uniquement) |
+
+⚠️ `Accept: application/json` est **refusé** par `/api/docs` (`406`) : les types servis sont `text/html`, `application/ld+json`, `application/vnd.openapi+json` et `application/vnd.openapi+yaml`.
 
 La documentation OpenAPI peut aussi être exportée :
 
@@ -342,11 +522,31 @@ La documentation OpenAPI peut aussi être exportée :
 php bin/console api:openapi:export
 ```
 
+### D'où vient `/api/docs`
+
+Le document est assemblé à partir de **deux sources**, et c'est utile à savoir avant d'y chercher une route manquante :
+
+1. **Les opérations déclarées dans les `#[ApiResource]`** des entités — tout ce qui concerne les événements, catégories, lieux et organisateurs. API Platform les décrit automatiquement ; un `OpenApiOperation` sur l'opération précise le résumé et les paramètres.
+2. **`src/OpenApi/UndocumentedEndpointsFactory.php`**, un décorateur de `api_platform.openapi.factory`, pour les routes écrites en contrôleurs Symfony classiques : `/api/health`, l'inscription, le renouvellement de jeton, le profil, la création d'organisation et les cinq endpoints de membres. API Platform ne décrit que ce qu'il route lui-même, ces routes lui étant invisibles.
+
+Le décorateur **n'ajoute que de la description** : il reçoit le document généré et y insère des chemins. Aucune route, aucun contrôleur, aucun contrôle d'accès n'en dépend — une erreur à cet endroit se voit dans `/api/docs`, jamais dans le comportement de l'API. La contrepartie est qu'il s'agit de documentation écrite à la main : **elle doit être mise à jour en même temps que les contrôleurs concernés**.
+
+`POST /api/auth/login` échappe aux deux : c'est le bundle Lexik qui le documente, en décorant la même factory.
+
+Ajouter une route à la documentation, selon son origine :
+
+- opération d'un `#[ApiResource]` → rien à faire, sinon affiner son `OpenApiOperation` ;
+- contrôleur Symfony classique → ajouter un chemin dans le décorateur, sur le modèle des méthodes existantes.
+
 ---
 
 ## CORS
 
 `config/packages/nelmio_cors.yaml` autorise, pour `^/api/`, **toutes les origines** (`allow_origin: ['*']`) avec `allow_credentials: true`, les méthodes `GET, POST, PUT, DELETE, OPTIONS` et les en-têtes `Content-Type` / `Authorization`. La variable `CORS_ALLOW_ORIGIN` présente dans `.env` n'est pas utilisée par cette configuration.
+
+⚠️ **`PATCH` est absent** d'`allow_methods` : la seule route qui l'accepte (`/api/organizers/{organizerId}/members/{userId}`) est donc inutilisable depuis un navigateur. Elle accepte aussi `PUT`, ce qui contourne le problème côté client ; l'ajouter à la configuration serait plus propre.
+
+⚠️ `allow_origin: ['*']` **avec** `allow_credentials: true` est une combinaison que les navigateurs refusent et, surtout, une ouverture totale : à restreindre aux origines des applications admin et mobile avant toute mise en production (`CORS_ALLOW_ORIGIN` est là pour ça, il suffit de la brancher).
 
 ## Exemples cURL
 
@@ -371,6 +571,37 @@ curl "http://localhost:8000/api/events/category/1"
 
 # Ressources natives API Platform (JSON simple plutôt que JSON-LD)
 curl http://localhost:8000/api/locations -H "Accept: application/json"
+
+# Sonde de disponibilité (sans token)
+curl http://localhost:8000/api/health
+
+# Mes organisations et mes événements
+curl http://localhost:8000/api/organizers/me -H "Authorization: Bearer $TOKEN"
+curl http://localhost:8000/api/user/me/organizations -H "Authorization: Bearer $TOKEN"
+curl http://localhost:8000/api/events/me -H "Authorization: Bearer $TOKEN"
+
+# Créer une organisation (le créateur en devient responsable)
+curl -X POST http://localhost:8000/api/organizers \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name":"Antsika Prod","email":"contact@antsika.mg"}'
+
+# Membres : lister, rattacher, changer de rôle, retirer, transférer
+curl http://localhost:8000/api/organizers/1/members -H "Authorization: Bearer $TOKEN"
+
+curl -X POST http://localhost:8000/api/organizers/1/members \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"email":"mamy.rabe@techmada.mg","role":"admin"}'
+
+curl -X PUT http://localhost:8000/api/organizers/1/members/4 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"role":"member"}'
+
+curl -X DELETE http://localhost:8000/api/organizers/1/members/4 \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -X PUT http://localhost:8000/api/organizers/1/owner \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"userId":4,"demoteTo":"admin"}'
 ```
 
 ## Documents liés

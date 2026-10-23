@@ -38,6 +38,18 @@ Consequence: API Platform's built-in pagination, filters, and normalization cont
 
 To add an endpoint: add an operation to the entity's `#[ApiResource]` (uriTemplate + `controller:` + `read: false`, plus an `OpenApiOperation` if it takes parameters), then write the `#[AsController]` invokable controller. Routes are mounted under the `/api` prefix by `config/routes/api_platform.yaml`.
 
+### OpenAPI (`/api/docs`)
+
+Le document est assemblé à partir de trois sources :
+
+1. les opérations déclarées dans les `#[ApiResource]` (événements, catégories, lieux, organisateurs) — décrites automatiquement ;
+2. `src/OpenApi/UndocumentedEndpointsFactory.php`, décorateur de `api_platform.openapi.factory`, pour les routes écrites en contrôleurs Symfony classiques (`/api/health`, inscription, refresh, profil, création d'organisation, les cinq endpoints de membres) : API Platform ne décrit que ce qu'il route lui-même, ces routes lui sont invisibles ;
+3. le bundle Lexik, qui documente `POST /api/auth/login` en décorant la même factory.
+
+Le décorateur n'ajoute **que de la description** — aucune route ni contrôle d'accès n'en dépend —, mais c'est de la documentation écrite à la main : **une nouvelle route en contrôleur classique n'apparaît dans `/api/docs` que si on l'y ajoute**, et un payload qui change doit y être répercuté. Vérifier avec `php bin/console api:openapi:export`.
+
+Attention au type MIME : `/api/docs` sert `text/html`, `application/ld+json`, `application/vnd.openapi+json` et `application/vnd.openapi+yaml` — `Accept: application/json` donne un `406`.
+
 ### Response envelope
 
 Controllers return a uniform shape; keep new endpoints consistent with it:
@@ -98,7 +110,7 @@ Droits : `OrganizerVoter` (VIEW = member+, EDIT/MANAGE_MEMBERS = admin+, TRANSFE
 
 `POST /api/organizers` (`Api\Organizer\CreateOrganizerController`) est la seule façon de créer une organisation **gérable** : il rattache le créateur comme responsable dans la même transaction. Celles créées par le payload imbriqué de `POST /api/events` n'ont aucun membre, donc n'apparaissent dans aucun `/me`.
 
-Endpoints (contrôleurs Symfony classiques sous `src/Controller/Api/Membership/`, hors pipeline API Platform car ce sont des écritures à corps libre — ils n'apparaissent donc pas dans `/api/docs`). Seule exception : `GET /api/organizers/me`, déclaré comme opération de `#[ApiResource]` sur `Organizer` (`read: false`), donc visible dans `/api/docs`.
+Endpoints (contrôleurs Symfony classiques sous `src/Controller/Api/Membership/`, hors pipeline API Platform car ce sont des écritures à corps libre). Seul `GET /api/organizers/me` est déclaré comme opération de `#[ApiResource]` sur `Organizer` (`read: false`). Les autres sont invisibles pour API Platform : ils sont décrits dans `/api/docs` par `src/OpenApi/UndocumentedEndpointsFactory.php` (voir « OpenAPI » plus haut).
 
 | Méthode | Route | Droit |
 |---|---|---|
