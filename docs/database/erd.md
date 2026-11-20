@@ -17,6 +17,11 @@ erDiagram
     LOCATION  ||--o{ EVENT                : "accueille"
     ORGANIZER ||--o{ EVENT                : "produit"
     EVENT     ||--o{ TICKET_TYPE          : "propose"
+    USER      |o--o{ TICKET_ORDER         : "commande (SET NULL)"
+    EVENT     ||--o{ TICKET_ORDER         : "est commande (RESTRICT)"
+    TICKET_ORDER ||--|{ ORDER_ITEM        : "contient"
+    TICKET_TYPE  ||--o{ ORDER_ITEM        : "est vendu (RESTRICT)"
+    ORDER_ITEM   ||--o{ TICKET            : "emet"
     USER      ||--o{ ORGANIZER_MEMBERSHIP : "appartient via"
     ORGANIZER ||--o{ ORGANIZER_MEMBERSHIP : "regroupe via"
     USER      ||..o{ REFRESH_TOKENS       : "lien logique email = username, sans FK"
@@ -85,6 +90,58 @@ erDiagram
 ```
 
 `ORGANIZER` est volontairement réduit ici ; son détail est dans le domaine suivant.
+
+## 2 bis. Domaine Commandes
+
+Détail des colonnes et contraintes : [`data-dictionary.md`](data-dictionary.md#ticket_order) et [`design-orders.md`](design-orders.md).
+
+```mermaid
+erDiagram
+    USER |o--o{ TICKET_ORDER : "user_id, ON DELETE SET NULL"
+    EVENT ||--o{ TICKET_ORDER : "event_id, ON DELETE RESTRICT"
+    TICKET_ORDER ||--|{ ORDER_ITEM : "order_id, ON DELETE CASCADE"
+    TICKET_TYPE ||--o{ ORDER_ITEM : "ticket_type_id, ON DELETE RESTRICT"
+    ORDER_ITEM ||--o{ TICKET : "order_item_id, ON DELETE CASCADE"
+
+    TICKET_ORDER {
+        int id PK "SERIAL"
+        varchar reference UK "20, TU-XXXXXXXX"
+        int user_id FK, UK "nullable, UK avec idempotency_key"
+        int event_id FK "NOT NULL"
+        varchar status "20, CHECK pending paid cancelled expired refunded"
+        int total_amount "NOT NULL, ariary, CHECK >= 0"
+        char currency "3, MGA"
+        varchar buyer_email "180, copie figee"
+        varchar idempotency_key UK "64, nullable"
+        timestamp expires_at "obligatoire si pending"
+        timestamp paid_at "nullable"
+        timestamp cancelled_at "nullable"
+    }
+
+    ORDER_ITEM {
+        int id PK "SERIAL"
+        int order_id FK, UK "UK avec ticket_type_id"
+        int ticket_type_id FK, UK "UK avec order_id"
+        varchar ticket_type_name "50, copie figee"
+        int unit_price "CHECK >= 0"
+        int quantity "CHECK > 0"
+        int line_total "CHECK = unit_price x quantity"
+    }
+
+    TICKET {
+        int id PK "SERIAL"
+        int order_item_id FK "NOT NULL"
+        varchar code UK "32, contenu du QR"
+        varchar status "20, CHECK valid used cancelled"
+        timestamp used_at "obligatoire si used"
+    }
+
+    TICKET_TYPE {
+        int id PK
+        int quantite_max "quota"
+        int quantite_reservee "DEFAULT 0, CHECK 0..quantite_max"
+    }
+```
 
 ## 3. Domaine Organisations
 
@@ -165,6 +222,11 @@ erDiagram
 | `location` → `event` | 1 — 0..N | `ManyToOne` (Event) / `OneToMany` (Location) | non |
 | `organizer` → `event` | 1 — 0..N | `ManyToOne` (Event) / `OneToMany` (Organizer) | non |
 | `event` → `ticket_type` | 1 — 0..N | `ManyToOne` (TicketType) / `OneToMany` (Event) | non |
+| `user` → `ticket_order` | 0..1 — 0..N | `ManyToOne` unidirectionnel (TicketOrder) | non |
+| `event` → `ticket_order` | 1 — 0..N | `ManyToOne` unidirectionnel (TicketOrder) | non |
+| `ticket_order` → `order_item` | 1 — 1..N | `ManyToOne` (OrderItem) / `OneToMany` (TicketOrder) | non |
+| `ticket_type` → `order_item` | 1 — 0..N | `ManyToOne` unidirectionnel (OrderItem) | non |
+| `order_item` → `ticket` | 1 — 0..N | `ManyToOne` (Ticket) / `OneToMany` (OrderItem) | non |
 | `user` ↔ `organizer` | N — N | 2 × `ManyToOne` depuis `OrganizerMembership` + 2 × `OneToMany` inverses | **`organizer_membership`** (entité à part entière) |
 | `user` → `refresh_tokens` | 1 — 0..N (logique) | aucun | non |
 

@@ -88,9 +88,17 @@ class Organizer
     private ?\DateTimeImmutable $updatedAt = null;
 
     /**
+     * Événements rattachés. Lecture seule en pratique : le rattachement se fait
+     * côté `Event` (colonne `event.organizer_id`, obligatoire).
+     *
+     * Pas d'`orphanRemoval` ni de cascade : supprimer une organisation ne doit jamais
+     * emporter ses événements (et leurs commandes). La base refuse la
+     * suppression tant que des événements y sont rattachés ;
+     * `IntegrityConstraintSubscriber` en fait une réponse `409` lisible.
+     *
      * @var Collection<int, Event>
      */
-    #[ORM\OneToMany(targetEntity: Event::class, mappedBy: 'organizer', orphanRemoval: true)]
+    #[ORM\OneToMany(targetEntity: Event::class, mappedBy: 'organizer')]
     private Collection $events;
 
     /**
@@ -207,14 +215,14 @@ class Organizer
         return $this;
     }
 
+    /**
+     * Retire l'événement de la collection en mémoire, **sans** le supprimer ni
+     * le détacher en base : `event.organizer_id` est obligatoire. Pour déplacer un
+     * événement vers une autre organisation, appeler `$event->setOrganizer($autre)`.
+     */
     public function removeEvent(Event $event): static
     {
-        if ($this->events->removeElement($event)) {
-            // set the owning side to null (unless already changed)
-            if ($event->getOrganizer() === $this) {
-                $event->setOrganizer(null);
-            }
-        }
+        $this->events->removeElement($event);
 
         return $this;
     }

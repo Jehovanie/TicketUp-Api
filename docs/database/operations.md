@@ -52,9 +52,10 @@ Ordre de chargement (dépendances `DependentFixtureInterface`) :
 
 ```
 CategoryFixtures ─┐
-LocationFixtures ─┼─► EventFixtures
-OrganizerFixtures ┤
+LocationFixtures ─┼─► EventFixtures ─────────┐
+OrganizerFixtures ┤                          ├─► OrderFixtures
                   └─► MembershipFixtures ◄── UserFixtures
+                         └───────────────────┘
 ```
 
 | Fixture | Contenu | Source |
@@ -65,6 +66,7 @@ OrganizerFixtures ┤
 | `UserFixtures` | Comptes de démonstration, mot de passe commun `UserFixtures::PASSWORD`, dont un `ROLE_SUPER_ADMIN` sans organisation | `src/DataFixtures/UserFixtures.php` |
 | `MembershipFixtures` | Appartenances : une personne responsable de deux organisations, une équipe complète, une co-responsable, des organisations sans membre | `src/DataFixtures/MembershipFixtures.php` |
 | `EventFixtures` | 60 événements (Faker `fr_FR`, `seed(2026)` : jeu reproductible) : passés / en cours / à venir, brouillons, 5 sans billetterie, sur-réservations, tarifs gratuits, prix arrondis à 500 Ar | `src/DataFixtures/EventFixtures.php` |
+| `OrderFixtures` | Commandes via `OrderService` (compteurs cohérents) : payées avec billets, en attente, annulées, expirées, gratuites, et un tarif vendu jusqu'à la dernière place | `src/DataFixtures/OrderFixtures.php` |
 
 > Au 2026-11-20, `UserFixtures.php` et `MembershipFixtures.php` ont des **modifications non commitées** : les emails et le mot de passe de la copie de travail ne correspondent plus au tableau des comptes de `CLAUDE.md`. Se référer au code de la branche utilisée.
 
@@ -92,6 +94,7 @@ DATABASE_URL="postgresql://…/ticket-up-check?serverVersion=16&charset=utf8" \
 | `app:organizer:member transfer -o <org> -u <user>` | Transfère la responsabilité | idem |
 | `app:user:super-admin <email> [--revoke]` | Ajoute / retire `ROLE_SUPER_ADMIN` dans `user.roles` | `src/Command/UserSuperAdminCommand.php` |
 | `gesdinet:jwt:clear` | Supprime les refresh tokens expirés (commande du bundle, non planifiée) | `gesdinet/jwt-refresh-token-bundle` |
+| `app:order:expire` | Expire les commandes en attente échues et rend leurs places. **À planifier chaque minute** (`* * * * * php bin/console app:order:expire -n`) ; exécutions simultanées sans danger. Sans elle, les paniers abandonnés épuisent le stock. | `src/Command/ExpireOrdersCommand.php` |
 
 La console est le seul moyen d'**amorcer** une organisation sans membre (aucun droit API n'existe sans appartenance).
 
@@ -117,6 +120,18 @@ JOIN ticket_type t ON t.event_id = e.id
 GROUP BY e.id, e.title, l.size
 HAVING SUM(t.quantite_max) > l.size;
 
+-- Compteur de places incohérent avec les commandes (doit renvoyer 0 ligne)
+SELECT t.id, t.name, t.quantite_reservee,
+       COALESCE(SUM(i.quantity) FILTER (WHERE o.status IN ('pending', 'paid')), 0) AS attendu
+FROM ticket_type t
+LEFT JOIN order_item i ON i.ticket_type_id = t.id
+LEFT JOIN ticket_order o ON o.id = i.order_id
+GROUP BY t.id
+HAVING t.quantite_reservee <> COALESCE(SUM(i.quantity) FILTER (WHERE o.status IN ('pending', 'paid')), 0);
+
+-- Commandes en attente dont la réservation est échue (la tâche app:order:expire est-elle planifiée ?)
+SELECT reference, expires_at FROM ticket_order WHERE status = 'pending' AND expires_at < NOW();
+
 -- Refresh tokens orphelins ou expirés
 SELECT r.id, r.username, r.valid
 FROM refresh_tokens r
@@ -124,7 +139,18 @@ LEFT JOIN "user" u ON u.email = r.username
 WHERE u.id IS NULL OR r.valid < NOW();
 ```
 
-## 6. Sauvegarde et restauration
+## 6. Tests
+
+```bash
+# une fois : .env.test.local (non versionné) avec DATABASE_URL et JWT_PASSPHRASE
+php bin/console doctrine:database:create --env=test --if-not-exists
+php bin/console doctrine:migrations:migrate -n --env=test
+php bin/phpunit
+```
+
+La base `<base>_test` est vidée avant chaque test (garde-fou : refus si le nom ne contient pas `_test`). Construire son schéma par les **migrations** : les contraintes CHECK n'existent que là. Détails : [`design-orders.md` § 9](design-orders.md#9-tests-écrits-avant-limplémentation).
+
+## 7. Sauvegarde et restauration
 
 **Rien n'est prévu dans le projet** : ni script, ni commande, ni configuration de sauvegarde (**À confirmer** côté infrastructure). À titre indicatif, avec le conteneur Docker local :
 

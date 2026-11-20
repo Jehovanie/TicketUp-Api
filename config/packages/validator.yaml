@@ -8,4 +8,4 @@ framework:
 when@test:
     framework:
         validation:
-             : false
+            not_compromised_password: false

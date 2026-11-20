@@ -4,11 +4,11 @@
 
 ## Objectif métier
 
-La base sert l'API REST TicketUp : catalogue d'**événements** (avec catégorie, lieu, organisation et **types de billets**), gestion des **organisations** et de leurs **membres** (rôles `owner` / `admin` / `member`), et **authentification** des utilisateurs (JWT + refresh tokens).
+La base sert l'API REST TicketUp : catalogue d'**événements** (avec catégorie, lieu, organisation et **types de billets**), **commande de billets** (réservation des places, billets émis), gestion des **organisations** et de leurs **membres** (rôles `owner` / `admin` / `member`), et **authentification** des utilisateurs (JWT + refresh tokens).
 
 Source : `README.md` (racine), `src/Entity/*.php`.
 
-Il n'existe **pas encore** de tables de commande, de billet émis, de paiement ou de contrôle d'accès : `ticket_type` décrit une offre tarifaire (nom, prix, quota), pas un billet vendu. Le brouillon `src/sql/main.sql` prévoit ces tables (`order`, `ticket`, `payment`, `ticket_scan`…), mais elles n'ont aucune entité Doctrine — voir [`open-questions.md`](open-questions.md#q-01).
+La commande de billets (lot 1) est en place depuis la migration `Version20261120125310` : `ticket_order`, `order_item`, `ticket` et le compteur `ticket_type.quantite_reservee` — voir [`design-orders.md`](design-orders.md). Le **paiement** (`payment`, lot 2), le contrôle d'accès à l'entrée et les remboursements ne sont pas encore modélisés.
 
 ## Pile technique
 
@@ -27,7 +27,7 @@ Il n'existe **pas encore** de tables de commande, de billet émis, de paiement o
 
 ## Tables
 
-**8 tables métier/techniques mappées** + 1 table technique de Doctrine Migrations.
+**11 tables mappées** + 1 table technique de Doctrine Migrations.
 
 | Table | Entité | Domaine |
 |---|---|---|
@@ -35,22 +35,28 @@ Il n'existe **pas encore** de tables de commande, de billet émis, de paiement o
 | `category` | `App\Entity\Category` | Catalogue |
 | `location` | `App\Entity\Location` | Catalogue |
 | `ticket_type` | `App\Entity\TicketType` | Billetterie |
+| `ticket_order` | `App\Entity\TicketOrder` | Commandes |
+| `order_item` | `App\Entity\OrderItem` | Commandes |
+| `ticket` | `App\Entity\Ticket` | Commandes |
 | `organizer` | `App\Entity\Organizer` | Organisations |
 | `organizer_membership` | `App\Entity\OrganizerMembership` | Organisations |
 | `"user"` | `App\Entity\User` | Identité & authentification |
 | `refresh_tokens` | `App\Entity\RefreshToken` (hérite de `Gesdinet\…\Entity\RefreshToken`) | Identité & authentification |
 | `doctrine_migration_versions` | — (technique) | Outillage |
 
-`doctrine:mapping:info` liste 9 entités : la 9ᵉ, `Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken`, est la *MappedSuperclass* du bundle dont hérite `App\Entity\RefreshToken` ; elle ne crée pas de table.
+`doctrine:mapping:info` liste 12 entités : la 12ᵉ, `Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken`, est la *MappedSuperclass* du bundle dont hérite `App\Entity\RefreshToken` ; elle ne crée pas de table.
 
 ## Domaines fonctionnels
 
 1. **Catalogue** — `event`, `category`, `location` : ce qui est publié et consulté publiquement.
 2. **Billetterie** — `ticket_type` : offres tarifaires rattachées à un événement.
-3. **Organisations** — `organizer`, `organizer_membership` : qui produit les événements et qui a le droit de les gérer.
-4. **Identité & authentification** — `"user"`, `refresh_tokens`.
+3. **Commandes** — `ticket_order`, `order_item`, `ticket` : ce qui a été commandé, au prix figé, et les billets émis.
+4. **Organisations** — `organizer`, `organizer_membership` : qui produit les événements et qui a le droit de les gérer.
+5. **Identité & authentification** — `"user"`, `refresh_tokens`.
 
-## État constaté de la base locale (2026-11-20)
+## État constaté de la base locale (2026-11-20, avant la commande de billets)
+
+> Constat fait avant la migration `Version20261120125310`. Celle-ci est appliquée et validée sur la base de test (`doctrine:schema:validate` OK) ; à appliquer sur chaque base avec `doctrine:migrations:migrate`.
 
 | Commande (lecture seule) | Résultat |
 |---|---|
@@ -59,7 +65,7 @@ Il n'existe **pas encore** de tables de commande, de billet émis, de paiement o
 | `doctrine:migrations:status` | 1 migration disponible, 1 exécutée (`Version20260814185842`, exécutée le 2026-11-17 14:24:46) |
 | `doctrine:schema:update --dump-sql` | « Nothing to update » |
 
-Aucun écart entités ↔ migration ↔ base réelle n'a été détecté sur cette base. En revanche, l'historique des migrations a été **réécrit** (voir [`migrations-history.md`](migrations-history.md)), et certaines documentations existantes du dépôt sont devenues inexactes (voir [`open-questions.md`](open-questions.md#q-02)).
+Aucun écart entités ↔ migration ↔ base réelle n'a été détecté sur cette base. En revanche, l'historique des migrations a été **réécrit** (commit `0d5acac`), et certaines documentations existantes du dépôt sont devenues inexactes (voir [`open-questions.md`](open-questions.md#q-02)).
 
 ## Index de la documentation
 
@@ -73,3 +79,4 @@ Aucun écart entités ↔ migration ↔ base réelle n'a été détecté sur cet
 | [`security-and-data.md`](security-and-data.md) | Données personnelles, hachage, rôles |
 | [`operations.md`](operations.md) | Migrations, fixtures, commandes utiles, sauvegarde |
 | [`open-questions.md`](open-questions.md) | Points d'incertitude et anomalies |
+| [`design-orders.md`](design-orders.md) | Commande de billets : conception, flux, contrat de code et tests (lot 1 implémenté) |

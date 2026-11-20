@@ -34,8 +34,9 @@ une application mobile React Native et un front web Angular. La section
 | Auth | LexikJWTAuthenticationBundle + Gesdinet (refresh tokens) |
 | CORS | NelmioCorsBundle |
 
-> Le projet ne contient **ni tests, ni linter, ni analyse statique**. Les changements se vérifient en
-> appelant les endpoints (`curl`, Swagger UI sur `/api/docs`).
+> Tests : PHPUnit 11 (`php bin/phpunit`), sur une base dédiée `*_test` construite par les migrations —
+> voir [`docs/database/design-orders.md` § 9](docs/database/design-orders.md#9-tests-écrits-avant-limplémentation).
+> Pas de linter ni d'analyse statique.
 
 ## Prérequis
 

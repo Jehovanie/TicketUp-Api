@@ -5,6 +5,7 @@ namespace App\Entity;
 use App\Repository\TicketTypeRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Serializer\Attribute\SerializedName;
 
 #[ORM\Entity(repositoryClass: TicketTypeRepository::class)]
 class TicketType
@@ -26,6 +27,18 @@ class TicketType
     #[ORM\Column]
     #[Groups(['events:lists', 'events:create'])]
     private ?int $quantite_max = null;
+
+    /**
+     * Places prises par les commandes en attente de paiement ou payées.
+     *
+     * Modifiée **uniquement** par une requête SQL conditionnelle d'`OrderService`
+     * (`quantite_reservee + n <= quantite_max`), jamais par l'ORM : une lecture
+     * suivie d'une réécriture perdrait des ventes simultanées. D'où l'absence de
+     * setter et `updatable: false`. La valeur en mémoire peut donc être en retard
+     * sur la base. Un CHECK (posé par la migration) la borne entre 0 et `quantite_max`.
+     */
+    #[ORM\Column(updatable: false, options: ['default' => 0])]
+    private int $quantiteReservee = 0;
 
     #[ORM\ManyToOne(inversedBy: 'ticket_type')]
     #[ORM\JoinColumn(nullable: false)]
@@ -86,6 +99,19 @@ class TicketType
         $this->quantite_max = $quantite_max;
 
         return $this;
+    }
+
+    public function getQuantiteReservee(): int
+    {
+        return $this->quantiteReservee;
+    }
+
+    /** Places encore en vente, exposées au catalogue. */
+    #[Groups(['events:lists'])]
+    #[SerializedName('quantite_disponible')]
+    public function getQuantiteDisponible(): int
+    {
+        return max(0, (int) $this->quantite_max - $this->quantiteReservee);
     }
 
     public function getEvent(): ?Event
