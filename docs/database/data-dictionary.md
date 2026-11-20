@@ -198,7 +198,7 @@ Remarques valables pour **toutes** les tables :
 
 ## `refresh_tokens`
 
-- **Entité** : `App\Entity\RefreshToken` — `src/Entity/RefreshToken.php` (classe vide qui hérite de `Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken`, mapping hérité du bundle)
+- **Entité** : `App\Entity\RefreshToken` — `src/Entity/RefreshToken.php` (hérite de `Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken` : colonnes héritées du bundle, index ajoutés par le projet)
 - **Configuration** : `config/packages/gesdinet_jwt_refresh_token.yaml`
 - **Rôle métier** : jetons de rafraîchissement des sessions JWT (durée de vie 30 jours, usage unique).
 
@@ -209,9 +209,9 @@ Remarques valables pour **toutes** les tables :
 | `username` | `VARCHAR` | non | — | 255 | — | Identifiant de l'utilisateur = son **email** (`user_identity_field: email`) |
 | `valid` | `TIMESTAMP(0)` | non | — | — | — | Date d'expiration (`+30 days`, `ttl: 2592000`). Type mutable (pas de commentaire DC2Type). |
 
-- **Clés étrangères** : **aucune**. Le lien avec `"user"` est logique (`username` = `user.email`).
-- **Index / unicité** : `UNIQ_9BACE7E1C74F2195 (refresh_token)` — recherche du jeton lors du rafraîchissement. Pas d'index sur `username` ni sur `valid`.
-- **Particularités** : `single_use: true` — chaque rafraîchissement invalide l'ancien jeton et en émet un nouveau (rotation). Aucune purge planifiée des jetons expirés n'est configurée dans le projet.
+- **Clés étrangères** : **aucune**. Le lien avec `"user"` est logique (`username` = `user.email`). La cohérence est maintenue par `App\EventListener\RefreshTokenUserListener` : suppression d'un compte → ses jetons sont supprimés ; changement d'email → `username` est mis à jour. Ne couvre que les opérations faites par l'ORM (pas le SQL direct).
+- **Index / unicité** : `UNIQ_9BACE7E1C74F2195 (refresh_token)` — recherche du jeton lors du rafraîchissement ; `idx_refresh_token_username (username)` — déconnexion globale, suppression de compte ; `idx_refresh_token_valid (valid)` — purge des jetons expirés (migration `Version20261120155745`).
+- **Particularités** : `single_use: true` — chaque rafraîchissement invalide l'ancien jeton et en émet un nouveau (rotation). Un jeton est supprimé par `POST /api/auth/logout` (un appareil) ou `POST /api/auth/logout-all` (tous les appareils). Les jetons expirés sont purgés par `gesdinet:jwt:clear`, **à planifier** (voir `operations.md`).
 
 ---
 

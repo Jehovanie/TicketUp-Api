@@ -24,8 +24,8 @@ Aucune donnée de paiement, d'adresse postale, de date de naissance ou de géolo
 
 Points RGPD à traiter (aucun mécanisme dans le code) :
 
-- **Droit à l'effacement** : pas d'endpoint ni de commande de suppression de compte. Une suppression SQL de `"user"` supprime ses appartenances (`ON DELETE CASCADE`) mais **laisse ses `refresh_tokens`** (lien par email sans FK).
-- **Durée de conservation** : non définie ; les refresh tokens expirés ne sont pas purgés (la commande `gesdinet:jwt:clear` existe mais aucune exécution planifiée n'est définie dans le projet — **À confirmer** côté infrastructure).
+- **Droit à l'effacement** : pas d'endpoint ni de commande de suppression de compte. Une suppression SQL de `"user"` supprime ses appartenances (`ON DELETE CASCADE`) mais **laisse ses `refresh_tokens`** (lien par email sans FK). Une suppression **par l'ORM** les supprime (`RefreshTokenUserListener`).
+- **Durée de conservation** : non définie ; les refresh tokens expirés sont purgés par `gesdinet:jwt:clear`, à planifier côté infrastructure (recommandé : une fois par jour, voir `operations.md`) — **À confirmer**.
 - **Exposition** : `GET /api/user/me` renvoie l'utilisateur courant (dont `roles`) ; `GET /api/organizers/{id}/members` expose l'email **et le téléphone** des membres à tous les membres de l'organisation (`MembershipPresenter::member()`).
 
 ## 2. Mots de passe
@@ -47,7 +47,17 @@ Aucun chiffrement applicatif de colonne n'est en place (pas de bundle de chiffre
 | Access token JWT | **Non stocké** en base (signé avec la paire de clés `config/jwt/*.pem`) | 15 min (`token_ttl: 900`, `config/packages/lexik_jwt_authentication.yaml`) | LexikJWTAuthenticationBundle |
 | Refresh token | Table `refresh_tokens`, valeur en clair, unique | 30 jours (`ttl: 2592000`), usage unique (`single_use: true`) | Gesdinet, `JwtSecurityService::saveRefreshToken()` |
 
-Le rattachement d'un refresh token à son utilisateur se fait par `username = email`. Si l'email d'un utilisateur change, ses refresh tokens deviennent orphelins (et inutilisables).
+Le rattachement d'un refresh token à son utilisateur se fait par `username = email`. Si l'email change par l'ORM, `RefreshTokenUserListener` reporte le nouvel email sur ses jetons.
+
+Révocation :
+
+| Besoin | Moyen | Effet |
+|---|---|---|
+| Déconnecter un appareil | `POST /api/auth/logout` `{refresh_token}` (sans access token) | Supprime ce jeton |
+| Déconnecter tous les appareils | `POST /api/auth/logout-all` (JWT requis) | Supprime tous les jetons de l'utilisateur |
+| Couper un compte (admin) | `DELETE FROM refresh_tokens WHERE username = '…'` | Idem, sans passer par l'API |
+
+Dans tous les cas, les access tokens déjà émis restent valables jusqu'à 15 minutes : un JWT ne se révoque pas.
 
 ## 5. Rôles et lien avec l'entité utilisateur
 

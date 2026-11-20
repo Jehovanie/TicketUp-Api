@@ -59,6 +59,8 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
 
         $paths->addPath('/api/auth/register', new PathItem(post: $this->register()));
         $paths->addPath('/api/auth/refresh', new PathItem(post: $this->refresh()));
+        $paths->addPath('/api/auth/logout', new PathItem(post: $this->logout()));
+        $paths->addPath('/api/auth/logout-all', new PathItem(post: $this->logoutAll()));
 
         $paths->addPath('/api/user/me', new PathItem(get: $this->me()));
         $paths->addPath('/api/user/me/organizations', new PathItem(get: $this->mesOrganisations()));
@@ -206,6 +208,57 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                 ],
                 ['refresh_token' => 'a1b2c3…']
             ), true),
+        );
+    }
+
+    private function logout(): Operation
+    {
+        return new Operation(
+            operationId: 'api_auth_logout',
+            tags: [self::TAG_AUTH],
+            responses: [
+                '200' => new Response(
+                    'Jeton invalidé. Répond aussi 200 pour un jeton inconnu ou déjà invalidé (idempotent).',
+                    $this->contenu($this->enveloppe(['type' => 'null']), [
+                        'message' => 'Déconnexion effectuée.', 'status' => 200, 'data' => null,
+                    ])
+                ),
+                '400' => new Response('Champ `refresh_token` absent, vide ou mal typé.', $this->contenu($this->enveloppe(['type' => 'null'], 400))),
+            ],
+            summary: 'Se déconnecter (cet appareil)',
+            description: "Supprime le refresh token fourni : il ne permet plus d'obtenir de nouveau JWT. "
+                . "**Aucun access token requis** (il a pu expirer). Les access tokens déjà émis restent "
+                . "valables jusqu'à leur expiration (15 min) : le client doit les oublier.",
+            requestBody: new RequestBody('Refresh token à invalider', $this->contenu(
+                [
+                    'type' => 'object',
+                    'required' => ['refresh_token'],
+                    'properties' => ['refresh_token' => ['type' => 'string']],
+                ],
+                ['refresh_token' => 'a1b2c3…']
+            ), true),
+        );
+    }
+
+    private function logoutAll(): Operation
+    {
+        return new Operation(
+            operationId: 'api_auth_logout_all',
+            tags: [self::TAG_AUTH],
+            responses: [
+                '200' => new Response('Tous les refresh tokens de l’utilisateur sont supprimés.', $this->contenu(
+                    $this->enveloppe([
+                        'type' => 'object',
+                        'properties' => ['revoked' => ['type' => 'integer', 'description' => 'Nombre de jetons supprimés']],
+                    ]),
+                    ['message' => 'Tous les appareils ont été déconnectés.', 'status' => 200, 'data' => ['revoked' => 2]]
+                )),
+                '401' => new Response('Access token absent ou invalide.'),
+            ],
+            summary: 'Se déconnecter de tous les appareils',
+            description: "Supprime tous les refresh tokens de l'utilisateur connecté (perte d'un téléphone, "
+                . "mot de passe compromis). Les access tokens déjà émis restent valables jusqu'à 15 min.",
+            security: $this->jwt(),
         );
     }
 
