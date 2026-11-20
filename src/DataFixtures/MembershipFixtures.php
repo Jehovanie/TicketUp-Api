@@ -29,20 +29,20 @@ class MembershipFixtures extends Fixture implements DependentFixtureInterface
         [UserFixtures::DIRIGEANT, OrganizerFixtures::MADAGASCAR_EVENTS, OrganizerRole::OWNER],
 
         // Équipe de Tech Madagascar.
-        ['lova.randria@techmada.mg', OrganizerFixtures::TECH_MADAGASCAR, OrganizerRole::ADMIN],
-        ['mamy.rabe@techmada.mg', OrganizerFixtures::TECH_MADAGASCAR, OrganizerRole::MEMBER],
+        ['lova@md.mg', OrganizerFixtures::TECH_MADAGASCAR, OrganizerRole::ADMIN],
+        ['mamy@md.mg', OrganizerFixtures::TECH_MADAGASCAR, OrganizerRole::MEMBER],
 
         // Madagascar Events : une co-responsable, pour tester le retrait d'un
         // responsable quand il en reste un autre.
-        ['noro.andria@madagascar-events.mg', OrganizerFixtures::MADAGASCAR_EVENTS, OrganizerRole::OWNER],
+        ['noro@md.mg', OrganizerFixtures::MADAGASCAR_EVENTS, OrganizerRole::OWNER],
 
         // Autres structures, un responsable chacune.
-        ['tiana.rasoa@zaikabe.mg', 'Zaikabe Production', OrganizerRole::OWNER],
-        ['fanja.rako@antsika.mg', 'Antsika Prod', OrganizerRole::OWNER],
-        ['jean.michel@baobabculture.mg', 'Baobab Culture', OrganizerRole::OWNER],
+        ['tiana@md.mg', 'Zaikabe Production', OrganizerRole::OWNER],
+        ['fanja@md.mg', 'Antsika Prod', OrganizerRole::OWNER],
+        ['jean@md.mg', 'Baobab Culture', OrganizerRole::OWNER],
 
         // Une personne peut aussi être simple membre ailleurs.
-        ['tiana.rasoa@zaikabe.mg', 'Tana Sound System', OrganizerRole::MEMBER],
+        ['tiana@md.mg', 'Tana Sound System', OrganizerRole::MEMBER],
     ];
 
     public function load(ObjectManager $manager): void
