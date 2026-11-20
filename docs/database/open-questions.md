@@ -12,7 +12,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 | Q-06 | Comment un événement passe-t-il de brouillon à publié ? | Aucun code n'écrit `status = true` hors fixtures | `src/Entity/Event.php`, `grep setStatus` |
 | Q-07 | `is_active` doit-il bloquer la connexion d'un compte non activé ? | Colonne jamais lue ni renseignée à l'inscription | `src/Entity/User.php` |
 | Q-08 | `organizer.email` doit-il être unique ? Une organisation peut-elle être une personne physique (RGPD) ? | Choix volontairement non tranché dans le contrôleur | `CreateOrganizerController::website()` (docblock) |
-| Q-09 | Quelle est la politique de sauvegarde, de conservation et de purge (refresh tokens, comptes supprimés) ? | Rien dans le dépôt | `operations.md` |
+| Q-09 | Quelle est la politique de sauvegarde, de conservation et de purge (comptes supprimés) ? Planification de `gesdinet:jwt:clear` (refresh tokens expirés) à confirmer côté infrastructure. | Rien dans le dépôt | `operations.md` |
 | Q-15 | Algorithme de hachage effectif en production (bcrypt / Argon2id) ? | Hasher `auto` | `config/packages/security.yaml` |
 | Q-16 | La création anonyme via `POST /api/events` (événement + organisation/catégorie/lieu imbriqués) est-elle voulue ? | Aucun contrôle d'accès sur l'opération | `src/Entity/Event.php`, `security.yaml` |
 | Q-17 | Colonnes exactes de `doctrine_migration_versions` | Gérée par le bundle, non décrite dans le code | — |
@@ -28,7 +28,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 | Q-19 | 🟠 | Incohérence ORM ↔ SQL : `ticket_type` est supprimé en cascade par l'ORM mais la FK n'a pas d'`ON DELETE CASCADE` ; inversement `event.category_id` est nullable sans `ON DELETE SET NULL` — supprimer une catégorie utilisée échoue. | `relations.md` |
 | Q-20 | 🟠 | *(Les tables de commande et `ticket_type.quantite_reservee` ont désormais leurs CHECK.)* Aucune contrainte de cohérence en base sur le socle : `end_at >= started_at`, `prix >= 0`, `quantite_max > 0`, `location.size > 0`, `role IN ('owner','admin','member')` (pas de `CHECK`). | migration, entités |
 | Q-21 | 🟠 | La création imbriquée de `POST /api/events` crée des catégories / lieux / organisations sans validation : un objet incomplet (ex. catégorie sans `name`) provoque une violation NOT NULL au `flush` (erreur 500) ; des doublons de noms sont possibles (aucune unicité). | `EventInputDenormalizer` |
-| Q-22 | 🟠 | Refresh tokens liés par email sans FK : orphelins si l'email change ou si l'utilisateur est supprimé. | `refresh_tokens`, `gesdinet_jwt_refresh_token.yaml` |
+| Q-22 | ✅ | **Corrigé le 2026-11-20** : `RefreshTokenUserListener` supprime les jetons d'un compte supprimé et reporte un changement d'email (opérations ORM ; le SQL direct reste non couvert, une FK n'étant pas compatible avec le bundle). Ajout de `POST /api/auth/logout` et `/logout-all`. Constat initial : refresh tokens liés par email sans FK, orphelins si l'email change ou si l'utilisateur est supprimé. | `refresh_tokens`, `gesdinet_jwt_refresh_token.yaml` |
 | Q-23 | 🟠 | Inscription : seule la validation du DTO est exécutée ; `UniqueEntity` sur `User` n'est jamais évalué, un email en doublon remonte comme exception SQL (500 probable — à confirmer par appel). | `UserRegistrationService`, `RegisterController` |
 
 ### Incohérences entités ↔ migrations ↔ documentation
@@ -40,6 +40,12 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 | Q-25 | 🟢 | `identity_generation_preferences: identity` est configuré, mais les colonnes `id` sont des `SERIAL` (séquences), pas des `IDENTITY`. Sans impact fonctionnel ; à garder en tête lors d'un passage à DBAL 4 (qui génère des `IDENTITY`). | `config/packages/doctrine.yaml`, `information_schema.columns` |
 | Q-26 | 🟢 | `src/sql/main.sql` ne correspond pas aux entités (`app_user`, `venue`, `organizer.user_id`…). | `src/sql/main.sql` |
 | — | ✅ | Aucun écart entités ↔ base locale : `doctrine:schema:validate` OK, `schema:update --dump-sql` vide. Aucune entité sans migration. | commandes Doctrine |
+
+### Authentification
+
+| ID | Gravité | Constat | Source |
+|---|---|---|---|
+| Q-34 | ✅ | **Corrigé le 2026-11-20** : `POST /api/auth/refresh` répondait **500** (« controller not callable ») — la route pointait vers le contrôleur `gesdinet.jwtrefreshtoken:refresh`, supprimé en v1 du bundle. Le rafraîchissement passe désormais par l'authenticator `refresh_jwt` du pare-feu `api`. `JwtLoginSuccessSubscriber`, jamais appelé (abonné à un nom d'événement que Lexik ne déclenche pas), a été supprimé. | `config/packages/security.yaml`, `config/routes/gesdinet_jwt_refresh_token.yaml` |
 
 ### Colonnes inutilisées ou mal typées
 
@@ -58,7 +64,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 | Q-11 | 🟠 | `title LIKE '%…%'` ne peut utiliser aucun index B-tree et est sensible à la casse ; un index trigramme (`pg_trgm`) avec `ILIKE` serait nécessaire à volume élevé. | `EventRepository::searchEvents()` |
 | Q-12 | 🟠 | **N+1** : `GET /api/events` (`findBy`), `searchEvents()` et `findByCategory()` ne joignent pas `category`, `location` ni `ticket_type`, tous sérialisés dans `events:lists` : jusqu'à 3 requêtes supplémentaires par événement. `findByUser()` charge catégorie et lieu, mais pas les tarifs. | `GetEventsController`, `EventRepository` |
 | Q-13 | 🟠 | `searchEvents()` et `findByCategory()` chargent **tous** les résultats sans `LIMIT` ; la pagination de `SearchEventController` est calculée en PHP (`count($events)`). | `EventRepository`, `SearchEventController` |
-| Q-14 | 🟢 | `refresh_tokens.username` non indexé (recherche des jetons d'un utilisateur, purge) ; `valid` non indexé (purge des jetons expirés). | migration |
+| Q-14 | ✅ | **Corrigé le 2026-11-20** (`Version20261120155745` : `idx_refresh_token_username`, `idx_refresh_token_valid`). Constat initial : `refresh_tokens.username` non indexé (recherche des jetons d'un utilisateur, purge) ; `valid` non indexé (purge des jetons expirés). | migration |
 | Q-31 | 🟢 | Index redondants sur `organizer_membership` : `IDX_E2DB4746A76ED395 (user_id)` est couvert par l'unique `(user_id, organizer_id)`, `IDX_E2DB4746876C4DDA (organizer_id)` par `(organizer_id, role)`. Générés automatiquement par Doctrine ; coût d'écriture négligeable à ce volume. | migration |
 | Q-32 | 🟢 | `User::getMembershipFor()` / `hasRoleIn()` et `Organizer::hasMember()` parcourent la collection complète (chargement lazy) à chaque contrôle du voter. Acceptable tant que les organisations ont peu de membres. | `src/Entity/User.php`, `OrganizerVoter` |
 | Q-33 | 🟢 | `OrganizerMembershipRepository::findByOrganizer()` trie en PHP (`usort`) : pas de pagination SQL possible pour la liste des membres. | repository |

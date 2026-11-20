@@ -56,7 +56,7 @@ La commande de billets (lot 1) est en place depuis la migration `Version20261120
 
 ## État constaté de la base locale (2026-11-20, avant la commande de billets)
 
-> Constat fait avant la migration `Version20261120125310`. Celle-ci est appliquée et validée sur la base de test (`doctrine:schema:validate` OK) ; à appliquer sur chaque base avec `doctrine:migrations:migrate`.
+> Constat fait avant les migrations `Version20261120125310` (commandes) et `Version20261120155745` (index de `refresh_tokens`). Elles sont appliquées et validées sur la base de test (`doctrine:schema:validate` OK) ; à appliquer sur chaque base avec `doctrine:migrations:migrate`.
 
 | Commande (lecture seule) | Résultat |
 |---|---|

@@ -30,7 +30,12 @@ security:
             pattern: ^/api
             stateless: true
             provider: app_user_provider
-            jwt: ~ 
+            entry_point: jwt
+            jwt: ~
+            # Rafraîchissement (Gesdinet v1) : authenticator sur le pare-feu,
+            # plus de contrôleur. Échange un refresh token contre un nouveau JWT.
+            refresh_jwt:
+                check_path: /api/auth/refresh
 
             # activate different ways to authenticate
             # https://symfony.com/doc/current/security.html#the-firewall
@@ -43,6 +48,8 @@ security:
     access_control:
     - { path: ^/api/auth/login$, roles: PUBLIC_ACCESS }
     - { path: ^/api/auth/register$, roles: PUBLIC_ACCESS }
+    - { path: ^/api/auth/refresh$, roles: PUBLIC_ACCESS }
+    - { path: ^/api/auth/logout$, roles: PUBLIC_ACCESS }
     - { path: ^/api/user$, roles: IS_AUTHENTICATED_FULLY }
 
 when@test:

@@ -44,7 +44,7 @@ Le comportement diffère selon que la suppression passe **par l'ORM** (`$em->rem
 | une `category` | **échec** si des événements la référencent (pas de cascade ni de `SET NULL`, alors que la FK est nullable) | **échec** si des événements la référencent |
 | un `location` | **échec** s'il accueille des événements (`409` dans l'API) ; supprimé seul sinon | **échec** si des événements le référencent |
 | un `organizer` | **échec** s'il porte des événements (`409` dans l'API) ; sinon supprimé avec ses appartenances (orphanRemoval + `ON DELETE CASCADE`) | **échec** si des événements le référencent ; sinon appartenances supprimées par `ON DELETE CASCADE` |
-| un `user` | ses commandes **restent** (`user_id` → `NULL`, coordonnées copiées conservées) ; ses appartenances sont supprimées — **sans passer par `OrganizerMembershipService`**, donc sans vérifier l'invariant « au moins un responsable » | appartenances supprimées (`ON DELETE CASCADE`) ; ses `refresh_tokens` **restent** (pas de FK) |
+| un `user` | ses commandes **restent** (`user_id` → `NULL`, coordonnées copiées conservées) ; ses appartenances sont supprimées — **sans passer par `OrganizerMembershipService`**, donc sans vérifier l'invariant « au moins un responsable » | appartenances supprimées (`ON DELETE CASCADE`) ; ses `refresh_tokens` **restent** (pas de FK) — supprimés si la suppression passe par l'ORM (`RefreshTokenUserListener`) |
 | une `ticket_order` | ses lignes et billets suivent (`CASCADE`) — à ne pas faire : une commande s'annule, elle ne se supprime pas | idem |
 | un `organizer_membership` | supprimé seul (normalement via `OrganizerMembershipService::revoke()`) | supprimé seul, sans contrôle d'invariant |
 

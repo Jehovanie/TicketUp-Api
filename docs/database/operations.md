@@ -93,7 +93,7 @@ DATABASE_URL="postgresql://…/ticket-up-check?serverVersion=16&charset=utf8" \
 | `app:organizer:member revoke -o <org> -u <user>` | Retire un membre (refusé pour le dernier responsable) | idem |
 | `app:organizer:member transfer -o <org> -u <user>` | Transfère la responsabilité | idem |
 | `app:user:super-admin <email> [--revoke]` | Ajoute / retire `ROLE_SUPER_ADMIN` dans `user.roles` | `src/Command/UserSuperAdminCommand.php` |
-| `gesdinet:jwt:clear` | Supprime les refresh tokens expirés (commande du bundle, non planifiée) | `gesdinet/jwt-refresh-token-bundle` |
+| `gesdinet:jwt:clear` | Supprime les refresh tokens expirés. **À planifier une fois par jour** (`0 3 * * * php bin/console gesdinet:jwt:clear -n`) : sinon la table grossit indéfiniment. | `gesdinet/jwt-refresh-token-bundle` |
 | `app:order:expire` | Expire les commandes en attente échues et rend leurs places. **À planifier chaque minute** (`* * * * * php bin/console app:order:expire -n`) ; exécutions simultanées sans danger. Sans elle, les paniers abandonnés épuisent le stock. | `src/Command/ExpireOrdersCommand.php` |
 
 La console est le seul moyen d'**amorcer** une organisation sans membre (aucun droit API n'existe sans appartenance).
@@ -132,7 +132,7 @@ HAVING t.quantite_reservee <> COALESCE(SUM(i.quantity) FILTER (WHERE o.status IN
 -- Commandes en attente dont la réservation est échue (la tâche app:order:expire est-elle planifiée ?)
 SELECT reference, expires_at FROM ticket_order WHERE status = 'pending' AND expires_at < NOW();
 
--- Refresh tokens orphelins ou expirés
+-- Refresh tokens orphelins ou expirés (orphelins possibles seulement après une écriture SQL directe sur "user")
 SELECT r.id, r.username, r.valid
 FROM refresh_tokens r
 LEFT JOIN "user" u ON u.email = r.username
