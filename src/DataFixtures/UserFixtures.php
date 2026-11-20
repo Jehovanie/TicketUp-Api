@@ -19,10 +19,10 @@ class UserFixtures extends Fixture
     public const REFERENCE_PREFIX = 'user_';
 
     /** Mot de passe commun à tous les comptes de démonstration. */
-    public const PASSWORD = '12345678';
+    public const PASSWORD = '123456789';
 
-    public const FONDATEUR = 'admin@ticketup.mg';
-    public const DIRIGEANT = 'jheo.ram@techmada.mg';
+    public const FONDATEUR = 'admin@admin.mg';
+    public const DIRIGEANT = 'jheo@md.mg';
 
     /** Email => [prénom, nom, téléphone, rôles globaux]. */
     private const USERS = [
@@ -33,12 +33,13 @@ class UserFixtures extends Fixture
         // Dirige deux structures indépendantes.
         self::DIRIGEANT => ['Jehovanie', 'Ramandrijoel', '+261 34 00 000 02', []],
 
-        'lova.randria@techmada.mg' => ['Lova', 'Randrianasolo', '+261 34 00 000 03', []],
-        'mamy.rabe@techmada.mg' => ['Mamy', 'Rabemananjara', '+261 34 00 000 04', []],
-        'noro.andria@madagascar-events.mg' => ['Noro', 'Andrianina', '+261 32 00 000 05', []],
-        'tiana.rasoa@zaikabe.mg' => ['Tiana', 'Rasoanaivo', '+261 33 00 000 06', []],
-        'fanja.rako@antsika.mg' => ['Fanja', 'Rakotoarisoa', '+261 34 00 000 07', []],
-        'jean.michel@baobabculture.mg' => ['Jean-Michel', 'Ravelo', '+261 32 00 000 08', []],
+        'agent@md.mg' => ['Agent', 'MD', '+261 34 00 000 03', []],
+        'lova@md.mg' => ['Lova', 'Randrianasolo', '+261 34 00 000 03', []],
+        'mamy@md.mg' => ['Mamy', 'Rabemananjara', '+261 34 00 000 04', []],
+        'noro@md.mg' => ['Noro', 'Andrianina', '+261 32 00 000 05', []],
+        'tiana@md.mg' => ['Tiana', 'Rasoanaivo', '+261 33 00 000 06', []],
+        'fanja@md.mg' => ['Fanja', 'Rakotoarisoa', '+261 34 00 000 07', []],
+        'jean@md.mg' => ['Jean-Michel', 'Ravelo', '+261 32 00 000 08', []],
     ];
 
     public function __construct(private readonly UserPasswordHasherInterface $hasher)

@@ -1,0 +1,69 @@
+# Points d'incertitude et anomalies
+
+Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **🟠 moyen** (incohérence, dette, performance), **🟢 faible** (documentation, confort). Chaque point cite sa source.
+
+## A. Points à confirmer avec l'équipe
+
+| ID | Question | Pourquoi | Source |
+|---|---|---|---|
+| <a id="q-01"></a>Q-01 | Les tables du brouillon `src/sql/main.sql` (`order`, `order_item`, `ticket`, `ticket_scan`, `payment`, `refund`, `promo_code`, `favorite_event`, `notification`, traductions…) constituent-elles la feuille de route ? | 22 tables prévues, 8 implémentées ; aucune vente de billet n'est modélisée | `src/sql/main.sql` |
+| Q-03 | Quels environnements (recette, production) ont exécuté l'ancienne migration `Version20260108164208` ? | Ils nécessitent un `doctrine:migrations:version --add` avant tout `migrate` | `migrations-history.md` |
+| Q-04 | Quel est le fuseau horaire de référence des dates (UTC ou `Indian/Antananarivo`) ? | Colonnes `TIMESTAMP WITHOUT TIME ZONE`, aucun fuseau configuré, CLI en UTC | `conventions.md` |
+| Q-06 | Comment un événement passe-t-il de brouillon à publié ? | Aucun code n'écrit `status = true` hors fixtures | `src/Entity/Event.php`, `grep setStatus` |
+| Q-07 | `is_active` doit-il bloquer la connexion d'un compte non activé ? | Colonne jamais lue ni renseignée à l'inscription | `src/Entity/User.php` |
+| Q-08 | `organizer.email` doit-il être unique ? Une organisation peut-elle être une personne physique (RGPD) ? | Choix volontairement non tranché dans le contrôleur | `CreateOrganizerController::website()` (docblock) |
+| Q-09 | Quelle est la politique de sauvegarde, de conservation et de purge (refresh tokens, comptes supprimés) ? | Rien dans le dépôt | `operations.md` |
+| Q-15 | Algorithme de hachage effectif en production (bcrypt / Argon2id) ? | Hasher `auto` | `config/packages/security.yaml` |
+| Q-16 | La création anonyme via `POST /api/events` (événement + organisation/catégorie/lieu imbriqués) est-elle voulue ? | Aucun contrôle d'accès sur l'opération | `src/Entity/Event.php`, `security.yaml` |
+| Q-17 | Colonnes exactes de `doctrine_migration_versions` | Gérée par le bundle, non décrite dans le code | — |
+
+## B. Anomalies repérées
+
+### Intégrité et cascades
+
+| ID | Gravité | Constat | Source |
+|---|---|---|---|
+| <a id="q-05"></a>Q-05 | 🔴 | `Location::$events` et `Organizer::$events` sont en `orphanRemoval: true` : supprimer un lieu ou une organisation via l'ORM **supprime tous ses événements et leurs tarifs** ; `removeEvent()` supprime l'événement au lieu de le détacher. Probablement un reliquat de MakerBundle plutôt qu'un choix métier. | `src/Entity/Location.php`, `src/Entity/Organizer.php` |
+| Q-18 | 🔴 | L'invariant « au moins un responsable » n'existe **qu'au niveau service** : la suppression d'un `user` (ORM ou SQL `ON DELETE CASCADE`) ou une écriture SQL directe peut laisser une organisation sans responsable. | `OrganizerMembershipService`, migration (FK `ON DELETE CASCADE`) |
+| Q-19 | 🟠 | Incohérence ORM ↔ SQL : `ticket_type` est supprimé en cascade par l'ORM mais la FK n'a pas d'`ON DELETE CASCADE` ; inversement `event.category_id` est nullable sans `ON DELETE SET NULL` — supprimer une catégorie utilisée échoue. | `relations.md` |
+| Q-20 | 🟠 | Aucune contrainte de cohérence en base : `end_at >= started_at`, `prix >= 0`, `quantite_max > 0`, `location.size > 0`, `role IN ('owner','admin','member')` (pas de `CHECK`). | migration, entités |
+| Q-21 | 🟠 | La création imbriquée de `POST /api/events` crée des catégories / lieux / organisations sans validation : un objet incomplet (ex. catégorie sans `name`) provoque une violation NOT NULL au `flush` (erreur 500) ; des doublons de noms sont possibles (aucune unicité). | `EventInputDenormalizer` |
+| Q-22 | 🟠 | Refresh tokens liés par email sans FK : orphelins si l'email change ou si l'utilisateur est supprimé. | `refresh_tokens`, `gesdinet_jwt_refresh_token.yaml` |
+| Q-23 | 🟠 | Inscription : seule la validation du DTO est exécutée ; `UniqueEntity` sur `User` n'est jamais évalué, un email en doublon remonte comme exception SQL (500 probable — à confirmer par appel). | `UserRegistrationService`, `RegisterController` |
+
+### Incohérences entités ↔ migrations ↔ documentation
+
+| ID | Gravité | Constat | Source |
+|---|---|---|---|
+| <a id="q-02"></a>Q-02 | 🟢 | `CLAUDE.md` et `STRUCTURE_BDD.md` affirment que la migration a un `up()` vide et citent `Version20260108164208`, supprimée depuis le commit `0d5acac` ; la migration actuelle crée tout le schéma. | `CLAUDE.md`, `STRUCTURE_BDD.md`, `migrations/` |
+| Q-24 | 🟢 | Le tableau des comptes de démonstration de `CLAUDE.md` ne correspond pas à la copie de travail de `UserFixtures.php` / `MembershipFixtures.php` (modifications non commitées au 2026-11-20). | `git status` |
+| Q-25 | 🟢 | `identity_generation_preferences: identity` est configuré, mais les colonnes `id` sont des `SERIAL` (séquences), pas des `IDENTITY`. Sans impact fonctionnel ; à garder en tête lors d'un passage à DBAL 4 (qui génère des `IDENTITY`). | `config/packages/doctrine.yaml`, `information_schema.columns` |
+| Q-26 | 🟢 | `src/sql/main.sql` ne correspond pas aux entités (`app_user`, `venue`, `organizer.user_id`…). | `src/sql/main.sql` |
+| — | ✅ | Aucun écart entités ↔ base locale : `doctrine:schema:validate` OK, `schema:update --dump-sql` vide. Aucune entité sans migration. | commandes Doctrine |
+
+### Colonnes inutilisées ou mal typées
+
+| ID | Gravité | Constat | Source |
+|---|---|---|---|
+| Q-27 | 🟠 | `event.image_url` : type `array` (sérialisation PHP), **déprécié en DBAL 3 et supprimé en DBAL 4** ; jamais alimenté ni exposé. À migrer en `JSON` ou supprimer. | `src/Entity/Event.php` |
+| Q-28 | 🟢 | `user.is_active` : nom de booléen pour une date, type mutable (seule date mutable du modèle avec `refresh_tokens.valid`), jamais utilisé. | `src/Entity/User.php` |
+| Q-29 | 🟢 | `updated_at` jamais rafraîchi sur `event`, `category`, `location`, `organizer`, `ticket_type` (pas de `PreUpdate`). | entités concernées |
+| Q-30 | 🟢 | Monnaie implicite (ariary) : aucune colonne de devise sur `ticket_type`. | `src/Entity/TicketType.php` |
+
+### Index et performance
+
+| ID | Gravité | Constat | Source |
+|---|---|---|---|
+| <a id="q-10"></a>Q-10 | 🟠 | Index manquants sur `event` pour les filtres et tris réellement utilisés : `status` + `started_at` (recherches publiques), `created_at` (liste, « mes événements »). Envisager `(status, started_at)` et `(created_at)`. | `EventRepository`, `GetEventsController` |
+| Q-11 | 🟠 | `title LIKE '%…%'` ne peut utiliser aucun index B-tree et est sensible à la casse ; un index trigramme (`pg_trgm`) avec `ILIKE` serait nécessaire à volume élevé. | `EventRepository::searchEvents()` |
+| Q-12 | 🟠 | **N+1** : `GET /api/events` (`findBy`), `searchEvents()` et `findByCategory()` ne joignent pas `category`, `location` ni `ticket_type`, tous sérialisés dans `events:lists` : jusqu'à 3 requêtes supplémentaires par événement. `findByUser()` charge catégorie et lieu, mais pas les tarifs. | `GetEventsController`, `EventRepository` |
+| Q-13 | 🟠 | `searchEvents()` et `findByCategory()` chargent **tous** les résultats sans `LIMIT` ; la pagination de `SearchEventController` est calculée en PHP (`count($events)`). | `EventRepository`, `SearchEventController` |
+| Q-14 | 🟢 | `refresh_tokens.username` non indexé (recherche des jetons d'un utilisateur, purge) ; `valid` non indexé (purge des jetons expirés). | migration |
+| Q-31 | 🟢 | Index redondants sur `organizer_membership` : `IDX_E2DB4746A76ED395 (user_id)` est couvert par l'unique `(user_id, organizer_id)`, `IDX_E2DB4746876C4DDA (organizer_id)` par `(organizer_id, role)`. Générés automatiquement par Doctrine ; coût d'écriture négligeable à ce volume. | migration |
+| Q-32 | 🟢 | `User::getMembershipFor()` / `hasRoleIn()` et `Organizer::hasMember()` parcourent la collection complète (chargement lazy) à chaque contrôle du voter. Acceptable tant que les organisations ont peu de membres. | `src/Entity/User.php`, `OrganizerVoter` |
+| Q-33 | 🟢 | `OrganizerMembershipRepository::findByOrganizer()` trie en PHP (`usort`) : pas de pagination SQL possible pour la liste des membres. | repository |
+
+### Tables orphelines
+
+- `refresh_tokens` est la seule table sans FK ; c'est voulu par le bundle Gesdinet (lien par identifiant utilisateur).
+- Aucune autre table isolée ni inutilisée.
