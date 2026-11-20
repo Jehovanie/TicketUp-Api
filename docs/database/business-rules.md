@@ -22,8 +22,10 @@ Chaque règle indique où elle est appliquée : **BDD** (contrainte SQL), **ORM*
 |---|---|---|---|
 | BR-TKT-01 | Un tarif appartient à exactement un événement ; il est supprimé avec lui ou lorsqu'il est retiré de sa collection. | ORM (`cascade remove`, `orphanRemoval`) | `Event::$ticket_type` |
 | BR-TKT-02 | Les prix sont des **entiers en ariary** ; `0` signifie gratuit. | Convention (fixtures) | `EventFixtures::TARIFS`, `TicketType::$prix` (`int`) |
-| BR-TKT-03 | La somme des quotas (`quantite_max`) **peut dépasser** la jauge du lieu (`location.size`) : la sur-réservation est un cas testé volontairement, l'alerte étant de la responsabilité de l'interface d'administration. | Aucun contrôle en base | `EventFixtures::createTicketTypes()`, `LocationFixtures` (docblock) |
+| BR-TKT-03 | La somme des quotas (`quantite_max`) **peut dépasser** la jauge du lieu (`location.size`) : la sur-réservation est un cas testé volontairement, l'alerte étant de la responsabilité de l'interface d'administration. La vente est bornée par le quota **du tarif**, pas par la jauge (D-07). | Aucun contrôle en base | `EventFixtures::createTicketTypes()`, `LocationFixtures` (docblock) |
 | BR-TKT-04 | Un événement peut n'avoir **aucun** tarif. | BDD (relation 0..N) | `EventFixtures` (1 sur 12 sans billetterie) |
+| BR-TKT-05 | On ne vend jamais plus que `quantite_max` : réservation par un `UPDATE` conditionnel atomique, et CHECK `0 ≤ quantite_reservee ≤ quantite_max`. Le quota ne peut pas être baissé sous les places déjà prises. Vérifié sous concurrence (20 achats simultanés sur 5 places : 5 ventes, 15 refus). | BDD + Service | `OrderService::reserve()`, migration `Version20261120125310` |
+| BR-TKT-06 | Un tarif vendu ne peut plus être supprimé (`RESTRICT`). | BDD | `order_item.ticket_type_id` |
 
 ## 3. Organisations et appartenances
 
@@ -68,4 +70,29 @@ Dans les constructeurs, la condition `if ($this->getId() === null)` est toujours
 
 ## 7. Workflows de statut
 
-Un seul statut existe : `event.status` (booléen brouillon / publié). Aucun workflow (Symfony Workflow, machine à états) n'est configuré, et aucun endpoint ne fait passer un événement de brouillon à publié à ce jour (**À confirmer** : publication prévue côté administration ?).
+Deux statuts existent : `event.status` (ci-dessous) et `ticket_order.status` (section 8).
+
+`event.status` (booléen brouillon / publié). Aucun workflow (Symfony Workflow, machine à états) n'est configuré, et aucun endpoint ne fait passer un événement de brouillon à publié à ce jour (**À confirmer** : publication prévue côté administration ?).
+
+## 8. Commande de billets
+
+Toutes les écritures passent par `src/Service/Order/OrderService.php` (comme `OrganizerMembershipService` pour les appartenances). Conception détaillée : [`design-orders.md`](design-orders.md).
+
+| ID | Règle | Niveau | Source |
+|---|---|---|---|
+| BR-ORD-01 | Seul un utilisateur connecté commande ; une commande porte sur **un seul** événement. | Contrôleur + BDD | `PlaceOrderController`, `ticket_order.event_id` NOT NULL |
+| BR-ORD-02 | L'événement doit être publié (un brouillon répond `404`) et non terminé (`409`) ; la vente reste ouverte pendant l'événement, jusqu'à `end_at`. | Service | `OrderService::eventOnSale()` |
+| BR-ORD-03 | 1 à 10 billets par commande, tous tarifs confondus ; quantités > 0 ; un tarif par ligne ; tarifs de l'événement commandé uniquement (`400`). | Service + BDD | `OrderService::normalizeLines()`, CHECK `chk_item_quantity`, `uniq_item_order_type` |
+| BR-ORD-04 | Le total est calculé à partir des prix en base ; nom et prix du tarif sont **figés** sur la ligne. | Entité + BDD | `OrderItem::fromTicketType()`, CHECK `chk_item_total` |
+| BR-ORD-05 | Si une ligne manque de places, **rien** n'est réservé ni enregistré (`409`, le message nomme le tarif). | Service (transaction) | `OrderService::place()` |
+| BR-ORD-06 | Commande payante : `pending`, places réservées 15 min (`expires_at`). Commande gratuite : `paid` immédiatement, billets émis. | Service + BDD | `OrderService::place()`, CHECK `chk_order_pending` |
+| BR-ORD-07 | Même `Idempotency-Key` pour le même acheteur ⇒ même commande, réservée une seule fois (`200` au lieu de `201`). | Service + BDD | `uniq_order_idempotency` |
+| BR-ORD-08 | Seul l'acheteur annule, et seulement une commande `pending` ; les places sont rendues. Annuler la commande d'un autre répond `404`. | Service | `OrderService::cancel()` |
+| BR-ORD-09 | Le paiement émet **un billet par place**, avec un code unique ; une confirmation rejouée n'émet rien de plus. | Entité + Service | `OrderItem::issueTickets()`, `OrderService::markAsPaid()` |
+| BR-ORD-10 | Les commandes `pending` échues passent à `expired` et rendent leurs places, une seule fois (`FOR UPDATE SKIP LOCKED`). | Service + commande planifiée | `OrderService::expirePending()`, `app:order:expire` |
+| BR-ORD-11 | Une commande est visible par l'acheteur, les membres de l'organisation de l'événement et le super administrateur ; pour les autres `404`. Les coordonnées de l'acheteur ne sont montrées qu'à l'organisation. | Voter | `OrderVoter`, `GetOrderController` |
+| BR-ORD-12 | Une commande n'est jamais supprimée ; elle survit au compte de l'acheteur (`SET NULL`) et bloque la suppression de l'événement (`RESTRICT`). | BDD | migration `Version20261120125310` |
+| BR-ORD-13 | Invariant : `ticket_type.quantite_reservee` = somme des quantités des commandes `pending` + `paid`. Vérifiable par la requête de [`operations.md`](operations.md#5-requêtes-sql-utiles-lecture). | Service | `OrderService` |
+
+Statuts (`OrderStatus`) : `pending` → `paid` | `cancelled` | `expired` ; `paid` → `refunded` | `cancelled` (lot 2, non implémenté).
+

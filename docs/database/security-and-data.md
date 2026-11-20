@@ -14,6 +14,8 @@ Sources : `src/Entity/User.php`, `src/Entity/Organizer.php`, `config/packages/se
 | `"user"` | `roles` | Habilitations globales | Utilisateur | Sécurité |
 | `"user"` | `is_active`, `created_at`, `updated_at` | Métadonnées de compte | Utilisateur | Faible |
 | `organizer_membership` | `user_id`, `role`, `created_at` | Appartenance à une organisation, date d'entrée | Utilisateur | Personnelle |
+| `ticket_order` | `buyer_email`, `buyer_firstname`, `buyer_lastname`, `buyer_phone`, `user_id` | Coordonnées de l'acheteur **copiées** à la commande, conservées après suppression du compte (pièce comptable) | Acheteur | Personnelle — à anonymiser sur demande d'effacement |
+| `ticket` | `code`, `holder_name` | Code d'accès porteur (qui le détient entre) ; nom du porteur | Acheteur / porteur | **Secret** (code) |
 | `refresh_tokens` | `username` | Email de l'utilisateur | Utilisateur | Personnelle |
 | `refresh_tokens` | `refresh_token` | Secret de session (**en clair**) | Utilisateur | **Critique** |
 | `organizer` | `email`, `phone`, `website` | Coordonnées de contact | Organisation — peut être une personne physique (auto-entrepreneur) : **À confirmer** | Personnelle possible |

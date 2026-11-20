@@ -77,7 +77,7 @@ Remarques valables pour **toutes** les tables :
 
 - **Clés étrangères** : aucune sortante. Référencée par `event.location_id`.
 - **Index / unicité** : aucun hors PK.
-- **Particularités** : collection inverse `events` en **`orphanRemoval: true`** — retirer un événement de la collection d'un lieu, ou supprimer le lieu via l'ORM, **supprime les événements** (voir [`relations.md`](relations.md)). Aucune adresse ni coordonnée géographique n'est stockée.
+- **Particularités** : collection inverse `events` sans cascade ni `orphanRemoval` : un lieu qui accueille des événements ne peut pas être supprimé (refus de la base, `409` dans l'API). Aucune adresse ni coordonnée géographique n'est stockée.
 
 ---
 
@@ -93,11 +93,13 @@ Remarques valables pour **toutes** les tables :
 | `name` | `VARCHAR` | non | — | 50 | — | Nom du tarif (« VIP », « Étudiant »…) |
 | `prix` | `INT` | non | — | — | — | Prix **entier en ariary** (`src/DataFixtures/EventFixtures.php`) ; `0` = gratuit. Monnaie non stockée. |
 | `quantite_max` | `INT` | non | — | — | — | Nombre maximal de billets de ce tarif (quota) |
+| `quantite_reservee` | `INT` | non | `0` | — | CHECK `chk_ticket_type_reservee` : `0 ≤ quantite_reservee ≤ quantite_max` | Places prises par les commandes `pending` et `paid`. Écrite **uniquement en SQL** par `OrderService` (mapping `updatable: false`, pas de setter). Non exposée ; l'API publie `quantite_disponible` = `quantite_max − quantite_reservee`. |
 | `created_at` | `TIMESTAMP(0)` | non | — | — | — | Création (constructeur) |
 | `updated_at` | `TIMESTAMP(0)` | non | — | — | — | Modification (constructeur uniquement) |
 
 - **Clés étrangères** : `FK_BE05421171F7E88B` (`event_id` → `event.id`) — pas d'`ON DELETE` en base ; la suppression en cascade est faite **par l'ORM** (`Event.ticket_type` : `cascade: ['remove']`, `orphanRemoval: true`).
 - **Index** : `IDX_BE05421171F7E88B (event_id)` (FK).
+- **Référencée par** `order_item.ticket_type_id` en `ON DELETE RESTRICT` : un tarif vendu ne peut plus être supprimé (ni via l'ORM, malgré la cascade de `Event.ticket_type`).
 - **Particularités** : nommage des colonnes en français et en snake_case côté PHP (`$prix`, `$quantite_max`), contrairement au reste du modèle. Aucune contrainte `prix >= 0`, `quantite_max > 0`, ni de somme des quotas ≤ `location.size` (le dépassement est même un cas voulu des fixtures).
 
 ---
@@ -121,7 +123,7 @@ Remarques valables pour **toutes** les tables :
 - **Index / unicité** : aucun hors PK.
 - **Particularités** :
   - pas de colonne `user_id` : le lien avec les utilisateurs passe exclusivement par `organizer_membership` ;
-  - collection `events` en **`orphanRemoval: true`** (suppression de l'organisation via l'ORM ⇒ suppression de ses événements et de leurs tarifs) ;
+  - collection `events` sans cascade ni `orphanRemoval` : une organisation qui porte des événements ne peut pas être supprimée (refus de la base, `409` dans l'API) ;
   - collection `memberships` en `cascade: ['persist']` + `orphanRemoval: true`.
 
 ---
@@ -210,6 +212,90 @@ Remarques valables pour **toutes** les tables :
 - **Clés étrangères** : **aucune**. Le lien avec `"user"` est logique (`username` = `user.email`).
 - **Index / unicité** : `UNIQ_9BACE7E1C74F2195 (refresh_token)` — recherche du jeton lors du rafraîchissement. Pas d'index sur `username` ni sur `valid`.
 - **Particularités** : `single_use: true` — chaque rafraîchissement invalide l'ancien jeton et en émet un nouveau (rotation). Aucune purge planifiée des jetons expirés n'est configurée dans le projet.
+
+---
+
+## `ticket_order`
+
+- **Entité** : `App\Entity\TicketOrder` — `src/Entity/TicketOrder.php`
+- **Repository** : `src/Repository/TicketOrderRepository.php`
+- **Rôle métier** : une commande de billets passée par un acheteur sur un événement.
+- Nommée `ticket_order` car `ORDER` est un mot réservé SQL.
+
+| Colonne | Type SQL | Null | Défaut | Longueur | Contraintes | Description métier |
+|---|---|---|---|---|---|---|
+| `id` | `INT` (SERIAL) | non | séquence | — | PK | Identifiant technique, **jamais exposé** |
+| `reference` | `VARCHAR` | non | — | 20 | UNIQUE `uniq_order_reference` | Référence publique `TU-XXXXXXXX` (alphabet sans I, O, 0, 1) |
+| `user_id` | `INT` | oui | `NULL` | — | FK → `"user".id` **ON DELETE SET NULL** | Acheteur ; `NULL` si le compte a été supprimé |
+| `event_id` | `INT` | non | — | — | FK → `event.id` **ON DELETE RESTRICT** | Événement commandé (une commande = un événement) |
+| `status` | `VARCHAR` | non | — (PHP : `pending`) | 20 | CHECK `chk_order_status` | Enum `OrderStatus` |
+| `total_amount` | `INT` | non | — | — | CHECK `chk_order_total` (≥ 0) | Total en ariary, somme des lignes, calculé côté serveur |
+| `currency` | `CHAR(3)` | non | — (PHP : `MGA`) | 3 | — | Devise |
+| `buyer_email` | `VARCHAR` | non | — | 180 | — | Email de l'acheteur, **copié** à la commande |
+| `buyer_firstname` | `VARCHAR` | non | — | 50 | — | Prénom copié |
+| `buyer_lastname` | `VARCHAR` | non | — | 50 | — | Nom copié |
+| `buyer_phone` | `VARCHAR` | oui | `NULL` | 30 | — | Téléphone copié |
+| `idempotency_key` | `VARCHAR` | oui | `NULL` | 64 | UNIQUE `uniq_order_idempotency` avec `user_id` | En-tête `Idempotency-Key` : un renvoi réseau ne crée pas de doublon |
+| `expires_at` | `TIMESTAMP(0)` | oui | `NULL` | — | CHECK `chk_order_pending` : obligatoire si `pending` | Fin de la réservation des places (15 min) |
+| `paid_at` | `TIMESTAMP(0)` | oui | `NULL` | — | — | Date de paiement (ou de création si gratuite) |
+| `cancelled_at` | `TIMESTAMP(0)` | oui | `NULL` | — | — | Date d'annulation |
+| `created_at` | `TIMESTAMP(0)` | non | — | — | — | `PrePersist` |
+| `updated_at` | `TIMESTAMP(0)` | non | — | — | — | `PrePersist` / `PreUpdate` (et SQL lors de l'expiration) |
+
+- **Index** : `idx_order_user_created (user_id, created_at)` — « mes commandes » ; `idx_order_event_status (event_id, status)` — ventes d'un événement ; `idx_order_pending_expiry (expires_at) WHERE status = 'pending'` — purge des réservations échues (index partiel, clause écrite sous la forme normalisée par PostgreSQL) ; `IDX_DD19F013A76ED395 (user_id)` et `IDX_DD19F01371F7E88B (event_id)`, index FK générés par Doctrine.
+- **Valeurs de `status`** (`src/Enum/OrderStatus.php`) :
+
+  | Valeur | Libellé | Places décomptées | Terminal |
+  |---|---|---|---|
+  | `pending` | En attente de paiement | oui | non |
+  | `paid` | Payée | oui | non |
+  | `cancelled` | Annulée | non | oui |
+  | `expired` | Expirée | non | oui |
+  | `refunded` | Remboursée (lot 2) | non | oui |
+
+- **Particularités** : jamais supprimée (pièce comptable) ; relation `user` et `event` unidirectionnelles (aucune collection ajoutée à `User` ni `Event`).
+
+---
+
+## `order_item`
+
+- **Entité** : `App\Entity\OrderItem` — `src/Entity/OrderItem.php`
+- **Rôle métier** : ligne de commande — un tarif, une quantité, au prix du moment.
+
+| Colonne | Type SQL | Null | Défaut | Longueur | Contraintes | Description métier |
+|---|---|---|---|---|---|---|
+| `id` | `INT` (SERIAL) | non | séquence | — | PK | Identifiant |
+| `order_id` | `INT` | non | — | — | FK → `ticket_order.id` **ON DELETE CASCADE** ; UK avec `ticket_type_id` | Commande |
+| `ticket_type_id` | `INT` | non | — | — | FK → `ticket_type.id` **ON DELETE RESTRICT** ; UK avec `order_id` | Tarif commandé |
+| `ticket_type_name` | `VARCHAR` | non | — | 50 | — | Nom du tarif **figé** à l'achat |
+| `unit_price` | `INT` | non | — | — | CHECK `chk_item_price` (≥ 0) | Prix unitaire **figé** à l'achat (ariary) |
+| `quantity` | `INT` | non | — | — | CHECK `chk_item_quantity` (> 0) | Nombre de places |
+| `line_total` | `INT` | non | — | — | CHECK `chk_item_total` (= `unit_price × quantity`) | Total de la ligne |
+| `created_at` | `TIMESTAMP(0)` | non | — | — | — | `PrePersist` |
+
+- **Index** : `uniq_item_order_type (order_id, ticket_type_id)` — un tarif par ligne ; `idx_item_ticket_type (ticket_type_id)` ; `IDX_52EA1F098D9F6D38 (order_id)` (FK, redondant avec l'unique).
+- **Particularités** : constructeur privé, création par `OrderItem::fromTicketType()` qui fige nom et prix.
+
+---
+
+## `ticket`
+
+- **Entité** : `App\Entity\Ticket` — `src/Entity/Ticket.php`
+- **Rôle métier** : billet émis — une place, un code pour le QR, créé au paiement (ou immédiatement si gratuit).
+
+| Colonne | Type SQL | Null | Défaut | Longueur | Contraintes | Description métier |
+|---|---|---|---|---|---|---|
+| `id` | `INT` (SERIAL) | non | séquence | — | PK | Identifiant |
+| `order_item_id` | `INT` | non | — | — | FK → `order_item.id` **ON DELETE CASCADE** | Ligne d'origine |
+| `code` | `VARCHAR` | non | — | 32 | UNIQUE `uniq_ticket_code` | 32 caractères hexadécimaux aléatoires (128 bits), contenu du QR code |
+| `status` | `VARCHAR` | non | — (PHP : `valid`) | 20 | CHECK `chk_ticket_status` | Enum `TicketStatus` : `valid`, `used`, `cancelled` |
+| `holder_name` | `VARCHAR` | oui | `NULL` | 100 | — | Nom du porteur (billets nominatifs, facultatif) |
+| `used_at` | `TIMESTAMP(0)` | oui | `NULL` | — | CHECK `chk_ticket_used` : obligatoire si `used` | Date du contrôle à l'entrée |
+| `created_at` | `TIMESTAMP(0)` | non | — | — | — | `PrePersist` |
+| `updated_at` | `TIMESTAMP(0)` | non | — | — | — | `PrePersist` / `PreUpdate` |
+
+- **Index** : `idx_ticket_order_item (order_item_id)`.
+- **Particularités** : `code` est un secret porteur (qui le détient entre) ; le contrôle à l'entrée (scan, passage à `used`) n'est pas encore implémenté.
 
 ---
 

@@ -46,9 +46,17 @@ class Location
     private ?\DateTimeImmutable $updatedAt = null;
 
     /**
+     * Événements rattachés. Lecture seule en pratique : le rattachement se fait
+     * côté `Event` (colonne `event.location_id`, obligatoire).
+     *
+     * Pas d'`orphanRemoval` ni de cascade : supprimer un lieu ne doit jamais
+     * emporter ses événements (et leurs commandes). La base refuse la
+     * suppression tant que des événements y sont rattachés ;
+     * `IntegrityConstraintSubscriber` en fait une réponse `409` lisible.
+     *
      * @var Collection<int, Event>
      */
-    #[ORM\OneToMany(targetEntity: Event::class, mappedBy: 'location', orphanRemoval: true)]
+    #[ORM\OneToMany(targetEntity: Event::class, mappedBy: 'location')]
     private Collection $events;
 
     public function __construct()
@@ -131,14 +139,14 @@ class Location
         return $this;
     }
 
+    /**
+     * Retire l'événement de la collection en mémoire, **sans** le supprimer ni
+     * le détacher en base : `event.location_id` est obligatoire. Pour déplacer un
+     * événement vers un autre lieu, appeler `$event->setLocation($autre)`.
+     */
     public function removeEvent(Event $event): static
     {
-        if ($this->events->removeElement($event)) {
-            // set the owning side to null (unless already changed)
-            if ($event->getLocation() === $this) {
-                $event->setLocation(null);
-            }
-        }
+        $this->events->removeElement($event);
 
         return $this;
     }

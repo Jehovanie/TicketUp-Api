@@ -6,7 +6,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 
 | ID | Question | Pourquoi | Source |
 |---|---|---|---|
-| <a id="q-01"></a>Q-01 | Les tables du brouillon `src/sql/main.sql` (`order`, `order_item`, `ticket`, `ticket_scan`, `payment`, `refund`, `promo_code`, `favorite_event`, `notification`, traductions…) constituent-elles la feuille de route ? | 22 tables prévues, 8 implémentées ; aucune vente de billet n'est modélisée | `src/sql/main.sql` |
+| <a id="q-01"></a>Q-01 | *(En partie résolu : commande, lignes et billets implémentés — voir `design-orders.md` ; paiement, remboursement, contrôle à l'entrée restent à faire.)* Les tables du brouillon `src/sql/main.sql` (`order`, `order_item`, `ticket`, `ticket_scan`, `payment`, `refund`, `promo_code`, `favorite_event`, `notification`, traductions…) constituent-elles la feuille de route ? | 22 tables prévues, 8 implémentées ; aucune vente de billet n'est modélisée | `src/sql/main.sql` |
 | Q-03 | Quels environnements (recette, production) ont exécuté l'ancienne migration `Version20260108164208` ? | Ils nécessitent un `doctrine:migrations:version --add` avant tout `migrate` | `migrations-history.md` |
 | Q-04 | Quel est le fuseau horaire de référence des dates (UTC ou `Indian/Antananarivo`) ? | Colonnes `TIMESTAMP WITHOUT TIME ZONE`, aucun fuseau configuré, CLI en UTC | `conventions.md` |
 | Q-06 | Comment un événement passe-t-il de brouillon à publié ? | Aucun code n'écrit `status = true` hors fixtures | `src/Entity/Event.php`, `grep setStatus` |
@@ -23,10 +23,10 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 
 | ID | Gravité | Constat | Source |
 |---|---|---|---|
-| <a id="q-05"></a>Q-05 | 🔴 | `Location::$events` et `Organizer::$events` sont en `orphanRemoval: true` : supprimer un lieu ou une organisation via l'ORM **supprime tous ses événements et leurs tarifs** ; `removeEvent()` supprime l'événement au lieu de le détacher. Probablement un reliquat de MakerBundle plutôt qu'un choix métier. | `src/Entity/Location.php`, `src/Entity/Organizer.php` |
+| <a id="q-05"></a>Q-05 | ✅ | **Corrigé le 2026-11-20** : `orphanRemoval` retiré, `removeEvent()` ne touche plus la base, refus traduits en `409` par `IntegrityConstraintSubscriber` (tests : `tests/Integration/Catalog/EventOwnershipTest.php`). Constat initial : `Location::$events` et `Organizer::$events` sont en `orphanRemoval: true` : supprimer un lieu ou une organisation via l'ORM **supprime tous ses événements et leurs tarifs** ; `removeEvent()` supprime l'événement au lieu de le détacher. Probablement un reliquat de MakerBundle plutôt qu'un choix métier. | `src/Entity/Location.php`, `src/Entity/Organizer.php` |
 | Q-18 | 🔴 | L'invariant « au moins un responsable » n'existe **qu'au niveau service** : la suppression d'un `user` (ORM ou SQL `ON DELETE CASCADE`) ou une écriture SQL directe peut laisser une organisation sans responsable. | `OrganizerMembershipService`, migration (FK `ON DELETE CASCADE`) |
 | Q-19 | 🟠 | Incohérence ORM ↔ SQL : `ticket_type` est supprimé en cascade par l'ORM mais la FK n'a pas d'`ON DELETE CASCADE` ; inversement `event.category_id` est nullable sans `ON DELETE SET NULL` — supprimer une catégorie utilisée échoue. | `relations.md` |
-| Q-20 | 🟠 | Aucune contrainte de cohérence en base : `end_at >= started_at`, `prix >= 0`, `quantite_max > 0`, `location.size > 0`, `role IN ('owner','admin','member')` (pas de `CHECK`). | migration, entités |
+| Q-20 | 🟠 | *(Les tables de commande et `ticket_type.quantite_reservee` ont désormais leurs CHECK.)* Aucune contrainte de cohérence en base sur le socle : `end_at >= started_at`, `prix >= 0`, `quantite_max > 0`, `location.size > 0`, `role IN ('owner','admin','member')` (pas de `CHECK`). | migration, entités |
 | Q-21 | 🟠 | La création imbriquée de `POST /api/events` crée des catégories / lieux / organisations sans validation : un objet incomplet (ex. catégorie sans `name`) provoque une violation NOT NULL au `flush` (erreur 500) ; des doublons de noms sont possibles (aucune unicité). | `EventInputDenormalizer` |
 | Q-22 | 🟠 | Refresh tokens liés par email sans FK : orphelins si l'email change ou si l'utilisateur est supprimé. | `refresh_tokens`, `gesdinet_jwt_refresh_token.yaml` |
 | Q-23 | 🟠 | Inscription : seule la validation du DTO est exécutée ; `UniqueEntity` sur `User` n'est jamais évalué, un email en doublon remonte comme exception SQL (500 probable — à confirmer par appel). | `UserRegistrationService`, `RegisterController` |
@@ -48,7 +48,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 | Q-27 | 🟠 | `event.image_url` : type `array` (sérialisation PHP), **déprécié en DBAL 3 et supprimé en DBAL 4** ; jamais alimenté ni exposé. À migrer en `JSON` ou supprimer. | `src/Entity/Event.php` |
 | Q-28 | 🟢 | `user.is_active` : nom de booléen pour une date, type mutable (seule date mutable du modèle avec `refresh_tokens.valid`), jamais utilisé. | `src/Entity/User.php` |
 | Q-29 | 🟢 | `updated_at` jamais rafraîchi sur `event`, `category`, `location`, `organizer`, `ticket_type` (pas de `PreUpdate`). | entités concernées |
-| Q-30 | 🟢 | Monnaie implicite (ariary) : aucune colonne de devise sur `ticket_type`. | `src/Entity/TicketType.php` |
+| Q-30 | 🟢 | Monnaie implicite (ariary) : aucune colonne de devise sur `ticket_type` (les commandes, elles, portent `currency = MGA`). | `src/Entity/TicketType.php` |
 
 ### Index et performance
 
