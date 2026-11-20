@@ -7,6 +7,7 @@ use App\Repository\EventRepository;
 use App\Repository\TicketOrderRepository;
 use App\Security\Voter\OrganizerVoter;
 use App\Service\Order\OrderPresenter;
+use App\Service\Order\OrderStatusFilter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -40,6 +41,8 @@ final class GetEventOrdersController extends AbstractController
             throw OrderException::accesRefuse();
         }
 
+        $statuses = OrderStatusFilter::fromRequest($request);
+
         $page = max(1, (int) $request->query->get('page', 1));
         $itemsPerPage = min(
             self::ITEMS_PER_PAGE_MAX,
@@ -51,13 +54,14 @@ final class GetEventOrdersController extends AbstractController
             'status' => 200,
             'data' => [
                 'event' => ['id' => $event->getId(), 'title' => $event->getTitle()],
-                'itemsTotal' => $this->orders->countByEvent($event),
+                'itemsTotal' => $this->orders->countByEvent($event, $statuses),
                 'currentPage' => $page,
                 'nombreParPage' => $itemsPerPage,
                 'items' => $this->presenter->orders(
-                    $this->orders->findByEvent($event, $itemsPerPage, ($page - 1) * $itemsPerPage),
+                    $this->orders->findByEvent($event, $itemsPerPage, ($page - 1) * $itemsPerPage, $statuses),
                     withBuyer: true
                 ),
+                'countsByStatus' => $this->orders->countsByStatusForEvent($event),
             ],
         ], 200);
     }

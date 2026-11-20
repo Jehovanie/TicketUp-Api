@@ -333,12 +333,14 @@ Nouveaux éléments applicatifs (pour mémoire) : entités `TicketOrder`, `Order
 | Méthode | Route | Droit |
 |---|---|---|
 | POST | `/api/orders` | authentifié |
-| GET | `/api/orders/me` | authentifié (ses commandes) |
+| GET | `/api/orders/me` | authentifié (ses commandes) ; filtre `?status=` |
 | GET | `/api/orders/{reference}` | l'acheteur, ou VIEW sur l'organisation de l'événement |
 | POST | `/api/orders/{reference}/cancel` | l'acheteur, tant que la commande est `pending` |
-| GET | `/api/events/{id}/orders` | VIEW sur l'organisation de l'événement |
+| GET | `/api/events/{id}/orders` | VIEW sur l'organisation de l'événement ; filtre `?status=` |
 
 (`/events/{id}` est contraint à `\d+` : `/events/{id}/orders` ne crée pas de conflit de route.)
+
+**Filtre par statut** (ajouté le 2026-11-20, pour les onglets du front) : les deux listes acceptent `?status=pending` ou plusieurs valeurs séparées par des virgules (`?status=cancelled,expired`). `itemsTotal` et la pagination portent sur la liste filtrée. Chaque réponse contient aussi `countsByStatus` (nombre de commandes par statut, les 5 statuts toujours présents, **sans tenir compte du filtre**) pour afficher les compteurs des onglets en un seul appel. Valeur inconnue, vide ou en majuscules → `400` listant les valeurs acceptées. Code : `OrderStatusFilter`, `TicketOrderRepository::countsByStatusFor*()`. Index : `idx_order_event_status (event_id, status)` couvre la liste d'un événement ; pour « mes commandes », `idx_order_user_created` suffit au volume d'un acheteur.
 
 ## 8. Décisions à prendre avec l'équipe
 
@@ -412,10 +414,10 @@ Contrat HTTP (enveloppe `{ message, status, data }`) :
 | Requête | Réponses testées |
 |---|---|
 | `POST /api/orders` | `201` ; `200` avec la même commande si l'`Idempotency-Key` est rejouée ; `400` (corps non JSON, champs manquants ou mal typés, clé de plus de 64 caractères) ; `401` ; `404` ; `409` |
-| `GET /api/orders/me` | `200`, pagination `page` / `itemsPerPage` (`itemsTotal`, `currentPage`, `nombreParPage`, `items`), de la plus récente à la plus ancienne ; `401` |
+| `GET /api/orders/me` | `200`, pagination `page` / `itemsPerPage` (`itemsTotal`, `currentPage`, `nombreParPage`, `items`), de la plus récente à la plus ancienne ; filtre `status` et `countsByStatus` (`OrderStatusFilterApiTest`) ; `400` statut inconnu ; `401` |
 | `GET /api/orders/{reference}` | `200` pour l'acheteur, un membre de l'organisation de l'événement ou le super admin ; `404` pour les autres et pour une référence inconnue ; `401` |
 | `POST /api/orders/{reference}/cancel` | `200` ; `404` (commande d'un autre) ; `409` (commande payée) ; `401` |
-| `GET /api/events/{id}/orders` | `200` pour un membre de l'organisation (avec `buyer.email`) ; `403` pour un non-membre ; `404` ; `401` |
+| `GET /api/events/{id}/orders` | `200` pour un membre de l'organisation (avec `buyer.email`), filtre `status` et `countsByStatus` ; `400` statut inconnu ; `403` pour un non-membre ; `404` ; `401` |
 
 Forme d'une commande dans `data` : `reference`, `status`, `totalAmount`, `currency`, `expiresAt` / `paidAt` (ATOM ou `null`), `event.id`, `items[]` (`ticketTypeId`, `name`, `unitPrice`, `quantity`, `lineTotal`), `tickets[]` (`code`, `status`, `ticketTypeName`), et `buyer` (au moins `email`) dans la vue organisateur. **Jamais d'`id`.**
 

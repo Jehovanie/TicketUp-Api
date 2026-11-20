@@ -5,7 +5,9 @@ namespace App\Repository;
 use App\Entity\Event;
 use App\Entity\TicketOrder;
 use App\Entity\User;
+use App\Enum\OrderStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -39,44 +41,103 @@ class TicketOrderRepository extends ServiceEntityRepository
         return $this->count(['reference' => $reference]) > 0;
     }
 
-    /** @return TicketOrder[] commandes de l'acheteur, de la plus récente à la plus ancienne */
-    public function findByUser(User $user, int $limit, int $offset): array
+    /**
+     * Commandes de l'acheteur, de la plus récente à la plus ancienne.
+     *
+     * @param OrderStatus[] $statuses filtre ; vide = tous les statuts
+     * @return TicketOrder[]
+     */
+    public function findByUser(User $user, int $limit, int $offset, array $statuses = []): array
     {
-        return $this->page(['user' => $user], $limit, $offset);
+        return $this->page($this->filtered('user', $user, $statuses), $limit, $offset);
     }
 
-    public function countByUser(User $user): int
+    /** @param OrderStatus[] $statuses */
+    public function countByUser(User $user, array $statuses = []): int
     {
-        return $this->count(['user' => $user]);
+        return $this->countFiltered($this->filtered('user', $user, $statuses));
     }
 
-    /** @return TicketOrder[] commandes d'un événement, de la plus récente à la plus ancienne */
-    public function findByEvent(Event $event, int $limit, int $offset): array
+    /** @return array<string, int> nombre de commandes de l'acheteur par statut (tous les statuts, 0 compris) */
+    public function countsByStatusForUser(User $user): array
     {
-        return $this->page(['event' => $event], $limit, $offset);
+        return $this->countsByStatus('user', $user);
     }
 
-    public function countByEvent(Event $event): int
+    /**
+     * Commandes d'un événement, de la plus récente à la plus ancienne.
+     *
+     * @param OrderStatus[] $statuses filtre ; vide = tous les statuts
+     * @return TicketOrder[]
+     */
+    public function findByEvent(Event $event, int $limit, int $offset, array $statuses = []): array
     {
-        return $this->count(['event' => $event]);
+        return $this->page($this->filtered('event', $event, $statuses), $limit, $offset);
+    }
+
+    /** @param OrderStatus[] $statuses */
+    public function countByEvent(Event $event, array $statuses = []): int
+    {
+        return $this->countFiltered($this->filtered('event', $event, $statuses));
+    }
+
+    /** @return array<string, int> nombre de commandes de l'événement par statut (tous les statuts, 0 compris) */
+    public function countsByStatusForEvent(Event $event): array
+    {
+        return $this->countsByStatus('event', $event);
+    }
+
+    /** @param OrderStatus[] $statuses */
+    private function filtered(string $field, object $owner, array $statuses): QueryBuilder
+    {
+        $qb = $this->createQueryBuilder('o')
+            ->andWhere(sprintf('o.%s = :owner', $field))
+            ->setParameter('owner', $owner);
+
+        if ($statuses !== []) {
+            $qb->andWhere('o.status IN (:statuses)')
+                ->setParameter('statuses', array_map(static fn (OrderStatus $s) => $s->value, $statuses));
+        }
+
+        return $qb;
+    }
+
+    private function countFiltered(QueryBuilder $qb): int
+    {
+        return (int) $qb->select('COUNT(o.id)')->getQuery()->getSingleScalarResult();
+    }
+
+    /** @return array<string, int> */
+    private function countsByStatus(string $field, object $owner): array
+    {
+        $rows = $this->filtered($field, $owner, [])
+            ->select('o.status AS status', 'COUNT(o.id) AS total')
+            ->groupBy('o.status')
+            ->getQuery()
+            ->getArrayResult();
+
+        $counts = array_fill_keys(array_map(static fn (OrderStatus $s) => $s->value, OrderStatus::cases()), 0);
+        foreach ($rows as $row) {
+            $status = $row['status'] instanceof OrderStatus ? $row['status']->value : (string) $row['status'];
+            $counts[$status] = (int) $row['total'];
+        }
+
+        return $counts;
     }
 
     /** @return TicketOrder[] */
-    private function page(array $criteria, int $limit, int $offset): array
+    private function page(QueryBuilder $qb, int $limit, int $offset): array
     {
-        $qb = $this->createQueryBuilder('o')
+        $orders = $qb
             ->addSelect('e')
             ->join('o.event', 'e')
             ->orderBy('o.createdAt', 'DESC')
             ->addOrderBy('o.id', 'DESC')
             ->setMaxResults($limit)
-            ->setFirstResult(max(0, $offset));
+            ->setFirstResult(max(0, $offset))
+            ->getQuery()
+            ->getResult();
 
-        foreach ($criteria as $field => $value) {
-            $qb->andWhere(sprintf('o.%s = :%s', $field, $field))->setParameter($field, $value);
-        }
-
-        $orders = $qb->getQuery()->getResult();
         $this->loadDetails($orders);
 
         return $orders;

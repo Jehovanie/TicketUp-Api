@@ -54,6 +54,15 @@ final class OrderException extends BusinessException
         ), 400);
     }
 
+    /** @param list<string> $acceptes */
+    public static function statutInvalide(array $acceptes): self
+    {
+        return new self(sprintf(
+            'Le paramètre « status » doit valoir %s (plusieurs valeurs séparées par des virgules).',
+            implode(', ', $acceptes)
+        ), 400);
+    }
+
     public static function tarifInconnu(int $ticketTypeId): self
     {
         return new self(sprintf('Le tarif %d n’existe pas pour cet événement.', $ticketTypeId), 400);

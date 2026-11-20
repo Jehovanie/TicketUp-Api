@@ -2,6 +2,7 @@
 
 namespace App\OpenApi;
 
+use App\Enum\OrderStatus;
 use ApiPlatform\OpenApi\Factory\OpenApiFactoryInterface;
 use ApiPlatform\OpenApi\Model\Operation;
 use ApiPlatform\OpenApi\Model\Parameter;
@@ -120,10 +121,13 @@ final class OrderEndpointsFactory implements OpenApiFactoryInterface
             tags: [self::TAG],
             responses: [
                 '200' => new Response('Commandes de l’utilisateur, de la plus récente à la plus ancienne.', $this->content($this->envelope($this->collection()))),
+                '400' => $this->error('Valeur de `status` inconnue.'),
                 '401' => new Response('Jeton absent, invalide ou expiré.'),
             ],
             summary: 'Mes commandes',
-            parameters: $this->paginationParameters(),
+            description: 'Filtrable par statut (`?status=pending`) pour les onglets du front. '
+                . '`countsByStatus` donne le nombre de commandes par statut, sans tenir compte du filtre.',
+            parameters: [$this->statusParameter(), ...$this->paginationParameters()],
             security: $this->jwt(),
         );
     }
@@ -172,13 +176,16 @@ final class OrderEndpointsFactory implements OpenApiFactoryInterface
             responses: [
                 '200' => new Response('Commandes de l’événement, avec l’acheteur (`buyer`).', $this->content($this->envelope($this->collection(true)))),
                 '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '400' => $this->error('Valeur de `status` inconnue.'),
                 '403' => $this->error('L’appelant n’est pas membre de l’organisation qui porte l’événement.'),
                 '404' => $this->error('Événement inexistant.'),
             ],
             summary: 'Commandes d’un événement (organisateur)',
-            description: 'Réservé aux membres de l’organisation de l’événement (tout rôle) et au super administrateur.',
+            description: 'Réservé aux membres de l’organisation de l’événement (tout rôle) et au super administrateur. '
+                . 'Filtrable par statut (`?status=paid`) ; `countsByStatus` ignore le filtre.',
             parameters: [
                 new Parameter(name: 'eventId', in: 'path', description: 'Identifiant de l’événement.', required: true, schema: ['type' => 'integer']),
+                $this->statusParameter(),
                 ...$this->paginationParameters(),
             ],
             security: $this->jwt(),
@@ -196,7 +203,7 @@ final class OrderEndpointsFactory implements OpenApiFactoryInterface
             'type' => 'object',
             'properties' => [
                 'reference' => ['type' => 'string', 'example' => 'TU-7K2M9QXA'],
-                'status' => ['type' => 'string', 'enum' => ['pending', 'paid', 'cancelled', 'expired', 'refunded']],
+                'status' => ['type' => 'string', 'enum' => $this->statuses()],
                 'statusLabel' => ['type' => 'string', 'example' => 'En attente de paiement'],
                 'totalAmount' => ['type' => 'integer', 'description' => 'Montant total en ariary.', 'example' => 90000],
                 'currency' => ['type' => 'string', 'example' => 'MGA'],
@@ -272,6 +279,12 @@ final class OrderEndpointsFactory implements OpenApiFactoryInterface
             'currentPage' => ['type' => 'integer'],
             'nombreParPage' => ['type' => 'integer'],
             'items' => ['type' => 'array', 'items' => ['$ref' => '#/components/schemas/Commande']],
+            'countsByStatus' => [
+                'type' => 'object',
+                'description' => 'Nombre de commandes par statut (tous les statuts, 0 compris), indépendant du filtre `status`.',
+                'properties' => array_fill_keys($this->statuses(), ['type' => 'integer']),
+                'example' => ['pending' => 2, 'paid' => 5, 'cancelled' => 1, 'expired' => 3, 'refunded' => 0],
+            ],
         ];
 
         if ($withEvent) {
@@ -282,6 +295,24 @@ final class OrderEndpointsFactory implements OpenApiFactoryInterface
         }
 
         return ['type' => 'object', 'properties' => $properties];
+    }
+
+    /** @return list<string> valeurs de {@see OrderStatus}, source unique */
+    private function statuses(): array
+    {
+        return array_map(static fn (OrderStatus $s) => $s->value, OrderStatus::cases());
+    }
+
+    private function statusParameter(): Parameter
+    {
+        return new Parameter(
+            name: 'status',
+            in: 'query',
+            description: 'Filtre par statut : une valeur ou plusieurs séparées par des virgules (`cancelled,expired`). '
+                . 'Valeurs : `' . implode('`, `', $this->statuses()) . '`. Absent : tous les statuts.',
+            required: false,
+            schema: ['type' => 'string', 'example' => 'pending'],
+        );
     }
 
     /** @return Parameter[] */
