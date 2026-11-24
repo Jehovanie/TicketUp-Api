@@ -18,6 +18,7 @@ Sources : `src/Entity/User.php`, `src/Entity/Organizer.php`, `config/packages/se
 | `ticket` | `code`, `holder_name` | Code d'accès porteur (qui le détient entre) ; nom du porteur | Acheteur / porteur | **Secret** (code) |
 | `refresh_tokens` | `username` | Email de l'utilisateur | Utilisateur | Personnelle |
 | `refresh_tokens` | `refresh_token` | Secret de session (**en clair**) | Utilisateur | **Critique** |
+| `organizer_payment_method` | `phone_number`, `account_name` | Numéro mobile money et **nom du titulaire** : donnée financière, personnelle si l'organisation est une personne physique | Titulaire du compte | Personnelle + financière — jamais exposée publiquement, réservée aux membres de l'organisation ; supprimée avec l'organisation (`ON DELETE CASCADE`) |
 | `organizer` | `email`, `phone`, `website` | Coordonnées de contact | Organisation — peut être une personne physique (auto-entrepreneur) : **À confirmer** | Personnelle possible |
 
 Aucune donnée de paiement, d'adresse postale, de date de naissance ou de géolocalisation n'est stockée à ce jour.

@@ -62,7 +62,7 @@ OrganizerFixtures ┤                          ├─► OrderFixtures
 |---|---|---|
 | `CategoryFixtures` | 12 catégories fixes avec couleur | `src/DataFixtures/CategoryFixtures.php` |
 | `LocationFixtures` | 12 lieux d'Antananarivo, jauges de 250 à 22 000 | `src/DataFixtures/LocationFixtures.php` |
-| `OrganizerFixtures` | 8 organisations | `src/DataFixtures/OrganizerFixtures.php` |
+| `OrganizerFixtures` | 8 organisations, chacune avec 1 à 3 comptes mobile money (cas : un, deux, trois opérateurs ; titulaire personne physique ou structure) | `src/DataFixtures/OrganizerFixtures.php` |
 | `UserFixtures` | Comptes de démonstration, mot de passe commun `UserFixtures::PASSWORD`, dont un `ROLE_SUPER_ADMIN` sans organisation | `src/DataFixtures/UserFixtures.php` |
 | `MembershipFixtures` | Appartenances : une personne responsable de deux organisations, une équipe complète, une co-responsable, des organisations sans membre | `src/DataFixtures/MembershipFixtures.php` |
 | `EventFixtures` | 60 événements (Faker `fr_FR`, `seed(2026)` : jeu reproductible) : passés / en cours / à venir, brouillons, 5 sans billetterie, sur-réservations, tarifs gratuits, prix arrondis à 500 Ar | `src/DataFixtures/EventFixtures.php` |

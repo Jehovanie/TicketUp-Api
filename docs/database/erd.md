@@ -149,6 +149,17 @@ erDiagram
 erDiagram
     USER ||--o{ ORGANIZER_MEMBERSHIP : "user_id, ON DELETE CASCADE"
     ORGANIZER ||--o{ ORGANIZER_MEMBERSHIP : "organizer_id, ON DELETE CASCADE"
+    ORGANIZER ||--|{ ORGANIZER_PAYMENT_METHOD : "organizer_id, ON DELETE CASCADE"
+
+    ORGANIZER_PAYMENT_METHOD {
+        int id PK "SERIAL"
+        int organizer_id FK, UK "NOT NULL, uniq_payment_method_organizer_provider"
+        varchar provider UK "20, NOT NULL, CHECK mvola orange_money airtel_money"
+        varchar phone_number "20, NOT NULL, CHECK +261 et 9 chiffres"
+        varchar account_name "100, NOT NULL, titulaire"
+        timestamp created_at "NOT NULL"
+        timestamp updated_at "NOT NULL"
+    }
 
     ORGANIZER {
         int id PK "SERIAL"
@@ -179,6 +190,12 @@ Contraintes clés de `organizer_membership` :
 
 - unicité `uniq_membership_user_organizer (user_id, organizer_id)` : un seul rôle par personne et par organisation ;
 - index `idx_membership_organizer_role (organizer_id, role)` : compter / lister les responsables d'une organisation.
+
+Contraintes clés de `organizer_payment_method` :
+
+- unicité `uniq_payment_method_organizer_provider (organizer_id, provider)` : un compte par opérateur et par organisation ;
+- `CHECK` sur `provider` (3 valeurs) et sur `phone_number` (`+261` + 9 chiffres) ;
+- la cardinalité « au moins un » (`||--|{`) est garantie par le contrôleur, **pas** par la base (voir [`business-rules.md`](business-rules.md), BR-ORG-10).
 
 ## 4. Domaine Identité et authentification
 
@@ -227,6 +244,7 @@ erDiagram
 | `ticket_order` → `order_item` | 1 — 1..N | `ManyToOne` (OrderItem) / `OneToMany` (TicketOrder) | non |
 | `ticket_type` → `order_item` | 1 — 0..N | `ManyToOne` unidirectionnel (OrderItem) | non |
 | `order_item` → `ticket` | 1 — 0..N | `ManyToOne` (Ticket) / `OneToMany` (OrderItem) | non |
+| `organizer` → `organizer_payment_method` | 1 — 1..N (« 1..N » côté service uniquement) | `ManyToOne` (OrganizerPaymentMethod) / `OneToMany` (Organizer) | non |
 | `user` ↔ `organizer` | N — N | 2 × `ManyToOne` depuis `OrganizerMembership` + 2 × `OneToMany` inverses | **`organizer_membership`** (entité à part entière) |
 | `user` → `refresh_tokens` | 1 — 0..N (logique) | aucun | non |
 

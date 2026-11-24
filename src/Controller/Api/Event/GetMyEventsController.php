@@ -2,22 +2,28 @@
 
 namespace App\Controller\Api\Event;
 
+use App\Entity\OrganizerMembership;
 use App\Entity\User;
-use App\Repository\EventRepository;
+use App\Exception\EventException;
+use App\Service\Event\EventFiltersParser;
+use App\Service\Event\EventListPresenter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
-use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Événements de l'utilisateur connecté — `/api/events` restreint à ce qui le concerne.
  *
- * Même réponse que `/api/events` (mêmes champs, même enveloppe, même pagination),
+ * Même réponse et mêmes filtres que `/api/events` (voir {@see EventFiltersParser}),
  * seul l'ensemble listé change : les événements portés par les organisations dont
- * la personne est membre. Le rattachement passe par `OrganizerMembership`, un
- * événement n'ayant pas d'auteur propre — il appartient à une organisation.
+ * la personne est membre, brouillons compris (c'est une vue de gestion). Le
+ * rattachement passe par `OrganizerMembership`, un événement n'ayant pas d'auteur
+ * propre — il appartient à une organisation.
+ *
+ * `organizer=<id>` doit désigner une de **ses** organisations, sinon `403` : une
+ * liste vide laisserait croire que l'organisation n'a pas d'événements.
  *
  * Comme pour `/api/organizers/me`, `ROLE_SUPER_ADMIN` ne donne pas d'appartenance :
  * un super administrateur membre d'aucune organisation reçoit une liste vide.
@@ -26,12 +32,9 @@ use Symfony\Component\Serializer\SerializerInterface;
 #[AsController]
 final class GetMyEventsController extends AbstractController
 {
-    private const ITEMS_PER_PAGE_DEFAULT = 10;
-    private const ITEMS_PER_PAGE_MAX = 20;
-
     public function __construct(
-        private readonly EventRepository $eventRepository,
-        private readonly SerializerInterface $serializer,
+        private readonly EventFiltersParser $parser,
+        private readonly EventListPresenter $presenter,
     ) {}
 
     #[IsGranted('ROLE_USER')]
@@ -39,34 +42,30 @@ final class GetMyEventsController extends AbstractController
     {
         /** @var User $user */
         $user = $this->getUser();
+        $filters = $this->parser->parse($request);
 
-        $page = max(1, (int) $request->query->get('page', 1));
-        $itemsPerPage = min(
-            self::ITEMS_PER_PAGE_MAX,
-            max(1, (int) $request->query->get('itemsPerPage', self::ITEMS_PER_PAGE_DEFAULT))
-        );
+        if ($filters->organizerId !== null && !$this->belongsTo($user, $filters->organizerId)) {
+            throw EventException::organisationHorsPerimetre();
+        }
 
-        $itemsTotal = $this->eventRepository->countByUser($user);
-        $events = $this->eventRepository->findByUser(
-            $user,
-            $itemsPerPage,
-            ($page - 1) * $itemsPerPage
-        );
-
-        $serializedEvents = json_decode(
-            $this->serializer->serialize($events, 'json', ['groups' => ['events:lists']]),
-            true
-        );
+        [$page, $itemsPerPage] = $this->parser->pagination($request);
 
         return $this->json([
             'message' => 'Liste de vos événements récupérée avec succès',
             'status' => 200,
-            'data' => [
-                'itemsTotal' => $itemsTotal,
-                'currentPage' => $page,
-                'nombreParPage' => $itemsPerPage,
-                'items' => $serializedEvents,
-            ],
+            'data' => $this->presenter->page($filters, $user, $page, $itemsPerPage),
         ], 200);
+    }
+
+    private function belongsTo(User $user, int $organizerId): bool
+    {
+        foreach ($user->getMemberships() as $membership) {
+            /** @var OrganizerMembership $membership */
+            if ($membership->getOrganizer()?->getId() === $organizerId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

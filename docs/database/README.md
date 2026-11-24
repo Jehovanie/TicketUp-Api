@@ -4,11 +4,11 @@
 
 ## Objectif métier
 
-La base sert l'API REST TicketUp : catalogue d'**événements** (avec catégorie, lieu, organisation et **types de billets**), **commande de billets** (réservation des places, billets émis), gestion des **organisations** et de leurs **membres** (rôles `owner` / `admin` / `member`), et **authentification** des utilisateurs (JWT + refresh tokens).
+La base sert l'API REST TicketUp : catalogue d'**événements** (avec catégorie, lieu, organisation et **types de billets**), **commande de billets** (réservation des places, billets émis), gestion des **organisations**, de leurs **membres** et de leurs **comptes mobile money** (rôles `owner` / `admin` / `member`), et **authentification** des utilisateurs (JWT + refresh tokens).
 
 Source : `README.md` (racine), `src/Entity/*.php`.
 
-La commande de billets (lot 1) est en place depuis la migration `Version20261120125310` : `ticket_order`, `order_item`, `ticket` et le compteur `ticket_type.quantite_reservee` — voir [`design-orders.md`](design-orders.md). Le **paiement** (`payment`, lot 2), le contrôle d'accès à l'entrée et les remboursements ne sont pas encore modélisés.
+La commande de billets (lot 1) est en place depuis la migration `Version20261120125310` : `ticket_order`, `order_item`, `ticket` et le compteur `ticket_type.quantite_reservee` — voir [`design-orders.md`](design-orders.md). Les **comptes d'encaissement** des organisations (`organizer_payment_method`, migration `Version20261124124512`) sont en place ; le **paiement** lui-même (`payment`, lot 2), le contrôle d'accès à l'entrée et les remboursements ne sont pas encore modélisés.
 
 ## Pile technique
 
@@ -27,7 +27,7 @@ La commande de billets (lot 1) est en place depuis la migration `Version20261120
 
 ## Tables
 
-**11 tables mappées** + 1 table technique de Doctrine Migrations.
+**12 tables mappées** + 1 table technique de Doctrine Migrations.
 
 | Table | Entité | Domaine |
 |---|---|---|
@@ -40,18 +40,19 @@ La commande de billets (lot 1) est en place depuis la migration `Version20261120
 | `ticket` | `App\Entity\Ticket` | Commandes |
 | `organizer` | `App\Entity\Organizer` | Organisations |
 | `organizer_membership` | `App\Entity\OrganizerMembership` | Organisations |
+| `organizer_payment_method` | `App\Entity\OrganizerPaymentMethod` | Organisations |
 | `"user"` | `App\Entity\User` | Identité & authentification |
 | `refresh_tokens` | `App\Entity\RefreshToken` (hérite de `Gesdinet\…\Entity\RefreshToken`) | Identité & authentification |
 | `doctrine_migration_versions` | — (technique) | Outillage |
 
-`doctrine:mapping:info` liste 12 entités : la 12ᵉ, `Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken`, est la *MappedSuperclass* du bundle dont hérite `App\Entity\RefreshToken` ; elle ne crée pas de table.
+`doctrine:mapping:info` liste 13 entités : la 12ᵉ, `Gesdinet\JWTRefreshTokenBundle\Entity\RefreshToken`, est la *MappedSuperclass* du bundle dont hérite `App\Entity\RefreshToken` ; elle ne crée pas de table.
 
 ## Domaines fonctionnels
 
 1. **Catalogue** — `event`, `category`, `location` : ce qui est publié et consulté publiquement.
 2. **Billetterie** — `ticket_type` : offres tarifaires rattachées à un événement.
 3. **Commandes** — `ticket_order`, `order_item`, `ticket` : ce qui a été commandé, au prix figé, et les billets émis.
-4. **Organisations** — `organizer`, `organizer_membership` : qui produit les événements et qui a le droit de les gérer.
+4. **Organisations** — `organizer`, `organizer_membership`, `organizer_payment_method` : qui produit les événements, qui a le droit de les gérer, et sur quel compte mobile money (MVola, Orange Money, Airtel Money) elle encaisse.
 5. **Identité & authentification** — `"user"`, `refresh_tokens`.
 
 ## État constaté de la base locale (2026-11-20, avant la commande de billets)

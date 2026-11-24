@@ -8,6 +8,7 @@ use App\Entity\Category;
 use App\Entity\Location;
 use App\Entity\Organizer;
 use App\Entity\TicketType;
+use App\Exception\OrganizerException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
@@ -71,33 +72,22 @@ class EventInputDenormalizer implements DenormalizerInterface
         return $category;
     }
 
-    private function getOrganizer($data)
+    /**
+     * L'organisation doit exister : elle se crée via `POST /api/organizers`, qui
+     * impose un compte mobile money et rattache le créateur comme responsable.
+     * Une création à la volée ici contournerait ces deux garanties.
+     */
+    private function getOrganizer($data): Organizer
     {
-        if (isset($data['organizer']['id'])) {
-            $organizer = $this->em->getRepository(Organizer::class)->find($data['organizer']['id']);
-            if (!$organizer) {
-                throw new \RuntimeException("Organisateur introuvable (id: {$data['organizer']['id']})");
-            }
-        } else if (!isset($data['organizer']['id']) || (isset($data['organizer']['id']) && $data['organizer']['id'] === null)) {
-            $organizer = new Organizer();
+        $id = $data['organizer']['id'] ?? null;
 
-            if (isset($data['organizer']['name'])) {
-                $organizer->setName($data["organizer"]["name"]);
-            }
+        if ($id === null || $id === '') {
+            throw OrganizerException::organisateurRequis();
+        }
 
-            if (isset($data['organizer']['email'])) {
-                $organizer->setEmail($data["organizer"]["email"]);
-            }
-
-            if (isset($data['organizer']['phone'])) {
-                $organizer->setPhone($data["organizer"]["phone"]);
-            }
-
-            if (isset($data['organizer']['website'])) {
-                $organizer->setWebsite($data["organizer"]["website"]);
-            }
-        } else {
-            $organizer = $this->iriConverter->getResourceFromIri($data['organizer']);
+        $organizer = $this->em->getRepository(Organizer::class)->find($id);
+        if (!$organizer) {
+            throw new \RuntimeException("Organisateur introuvable (id: {$id})");
         }
 
         return $organizer;

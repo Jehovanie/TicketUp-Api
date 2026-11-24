@@ -2,6 +2,7 @@
 
 namespace App\Repository;
 
+use App\Entity\Organizer;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -33,6 +34,32 @@ class UserRepository extends ServiceEntityRepository implements PasswordUpgrader
         $this->getEntityManager()->flush();
     }
 
+
+    /**
+     * Utilisateurs à inviter dans une organisation : correspondance partielle
+     * (insensible à la casse) sur l'email, le prénom ou le nom, **hors membres
+     * actuels** de cette organisation.
+     *
+     * @return User[]
+     */
+    public function searchInvitable(Organizer $organizer, string $term, int $limit): array
+    {
+        $like = '%' . addcslashes(mb_strtolower($term), '%_\\') . '%';
+
+        return $this->createQueryBuilder('u')
+            ->andWhere('LOWER(u.email) LIKE :like OR LOWER(u.firstname) LIKE :like OR LOWER(u.lastname) LIKE :like')
+            ->andWhere('NOT EXISTS (
+                SELECT 1 FROM App\Entity\OrganizerMembership m WHERE m.user = u AND m.organizer = :organizer
+            )')
+            ->setParameter('like', $like)
+            ->setParameter('organizer', $organizer)
+            ->orderBy('u.lastname', 'ASC')
+            ->addOrderBy('u.firstname', 'ASC')
+            ->addOrderBy('u.id', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
 
     public function saveUser(User $user): void{
         $this->getEntityManager()->persist($user);

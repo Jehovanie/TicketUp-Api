@@ -60,23 +60,23 @@ class Organizer
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['events:details', 'organizer:lists'])]
+    #[Groups(['events:details', 'events:create', 'organizer:lists'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 100)]
-    #[Groups(['events:details', 'events:create', 'organizer:lists'])]
+    #[Groups(['events:details', 'organizer:lists'])]
     private ?string $name = null;
 
     #[ORM\Column(length: 100)]
-    #[Groups(['events:details', 'events:create', 'organizer:lists'])]
+    #[Groups(['events:details', 'organizer:lists'])]
     private ?string $email = null;
 
     #[ORM\Column(length: 50, nullable: true)]
-    #[Groups(['events:details', 'events:create', 'organizer:details'])]
+    #[Groups(['events:details', 'organizer:details'])]
     private ?string $phone = null;
 
     #[ORM\Column(length: 100, nullable: true)]
-    #[Groups(['events:details', 'events:create', 'organizer:details'])]
+    #[Groups(['events:details', 'organizer:details'])]
     private ?string $website = null;
 
     #[ORM\Column]
@@ -109,10 +109,20 @@ class Organizer
     #[ORM\OneToMany(mappedBy: 'organizer', targetEntity: OrganizerMembership::class, cascade: ['persist'], orphanRemoval: true)]
     private Collection $memberships;
 
+    /**
+     * Comptes mobile money d'encaissement (au plus un par opérateur). Non
+     * exposés par l'API publique : aucun groupe de sérialisation.
+     *
+     * @var Collection<int, OrganizerPaymentMethod>
+     */
+    #[ORM\OneToMany(mappedBy: 'organizer', targetEntity: OrganizerPaymentMethod::class, cascade: ['persist'], orphanRemoval: true)]
+    private Collection $paymentMethods;
+
     public function __construct()
     {
         $this->events = new ArrayCollection();
         $this->memberships = new ArrayCollection();
+        $this->paymentMethods = new ArrayCollection();
 
         $this->setUpdatedAt(new \DateTimeImmutable());
         if( $this->getId() === null ) {
@@ -223,6 +233,31 @@ class Organizer
     public function removeEvent(Event $event): static
     {
         $this->events->removeElement($event);
+
+        return $this;
+    }
+
+    // ------------------------------------------------------ Moyens de paiement
+
+    /** @return Collection<int, OrganizerPaymentMethod> */
+    public function getPaymentMethods(): Collection
+    {
+        return $this->paymentMethods;
+    }
+
+    public function addPaymentMethod(OrganizerPaymentMethod $method): static
+    {
+        if (!$this->paymentMethods->contains($method)) {
+            $this->paymentMethods->add($method);
+            $method->setOrganizer($this);
+        }
+
+        return $this;
+    }
+
+    public function removePaymentMethod(OrganizerPaymentMethod $method): static
+    {
+        $this->paymentMethods->removeElement($method);
 
         return $this;
     }

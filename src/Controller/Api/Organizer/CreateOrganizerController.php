@@ -5,9 +5,10 @@ namespace App\Controller\Api\Organizer;
 use App\Entity\Organizer;
 use App\Entity\User;
 use App\Enum\OrganizerRole;
-use App\Exception\OrganizerException;
 use App\Service\Organizer\MembershipPresenter;
 use App\Service\Organizer\OrganizerMembershipService;
+use App\Service\Organizer\OrganizerInputParser;
+use App\Service\Organizer\PaymentMethodInputParser;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -28,22 +29,22 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  * qui garantit l'invariant « une organisation a toujours au moins un
  * responsable » dès sa naissance.
  *
- * Corps attendu : `{ "name": "…", "email": "…", "phone": "…", "website": "…" }`
- * — les deux premiers sont obligatoires.
+ * Corps attendu :
+ * `{ "name": "…", "email": "…", "phone": "…", "website": "…",
+ *    "paymentMethods": [ { "provider": "mvola", "phoneNumber": "034 12 345 67", "accountName": "RAKOTO Jean" } ] }`
+ * — `name`, `email` et au moins un compte mobile money (MVola, Orange Money,
+ * Airtel Money ; un seul par opérateur) sont obligatoires.
  */
 #[AsController]
 #[Route('/api/organizers', name: 'api_organizer_create', methods: ['POST'])]
 final class CreateOrganizerController extends AbstractController
 {
-    private const MAX_NAME = 100;
-    private const MAX_EMAIL = 100;
-    private const MAX_PHONE = 50;
-    private const MAX_WEBSITE = 100;
-
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly OrganizerMembershipService $membershipService,
         private readonly MembershipPresenter $presenter,
+        private readonly PaymentMethodInputParser $paymentParser,
+        private readonly OrganizerInputParser $inputParser,
     ) {}
 
     #[IsGranted('ROLE_USER')]
@@ -55,11 +56,19 @@ final class CreateOrganizerController extends AbstractController
         $payload = json_decode($request->getContent() ?: '[]', true);
         $payload = is_array($payload) ? $payload : [];
 
+        $fields = $this->inputParser->parse($payload, partial: false);
+
         $organizer = (new Organizer())
-            ->setName($this->requiredText($payload, 'name', self::MAX_NAME))
-            ->setEmail($this->email($payload))
-            ->setPhone($this->optionalText($payload, 'phone', self::MAX_PHONE))
-            ->setWebsite($this->website($payload));
+            ->setName($fields['name'])
+            ->setEmail($fields['email'])
+            ->setPhone($fields['phone'])
+            ->setWebsite($fields['website']);
+
+        // Validé avant tout accès à la base : une saisie fausse ne doit rien écrire.
+        // Persistés en cascade avec l'organisation, dans la même transaction.
+        foreach ($this->paymentParser->parse($payload['paymentMethods'] ?? null) as $method) {
+            $organizer->addPaymentMethod($method);
+        }
 
         // `assign()` cherche une appartenance existante, ce qui suppose une
         // organisation déjà identifiée : on l'enregistre donc d'abord. La
@@ -79,62 +88,5 @@ final class CreateOrganizerController extends AbstractController
             'status' => 201,
             'data' => $this->presenter->organization($membership),
         ], 201);
-    }
-
-    private function requiredText(array $payload, string $champ, int $maximum): string
-    {
-        $valeur = trim((string) ($payload[$champ] ?? ''));
-
-        if ($valeur === '') {
-            throw OrganizerException::champRequis($champ);
-        }
-
-        if (mb_strlen($valeur) > $maximum) {
-            throw OrganizerException::champTropLong($champ, $maximum);
-        }
-
-        return $valeur;
-    }
-
-    private function optionalText(array $payload, string $champ, int $maximum): ?string
-    {
-        $valeur = trim((string) ($payload[$champ] ?? ''));
-
-        if ($valeur === '') {
-            return null;
-        }
-
-        if (mb_strlen($valeur) > $maximum) {
-            throw OrganizerException::champTropLong($champ, $maximum);
-        }
-
-        return $valeur;
-    }
-
-    private function email(array $payload): string
-    {
-        $email = strtolower($this->requiredText($payload, 'email', self::MAX_EMAIL));
-
-        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            throw OrganizerException::emailInvalide($email);
-        }
-
-        return $email;
-    }
-
-    /**
-     * La colonne `email` n'étant pas unique en base, deux organisations peuvent
-     * partager une adresse — on ne l'interdit pas ici pour ne pas inventer une
-     * règle que le schéma ne porte pas.
-     */
-    private function website(array $payload): ?string
-    {
-        $website = $this->optionalText($payload, 'website', self::MAX_WEBSITE);
-
-        if ($website !== null && filter_var($website, FILTER_VALIDATE_URL) === false) {
-            throw OrganizerException::siteInvalide($website);
-        }
-
-        return $website;
     }
 }

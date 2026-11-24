@@ -2,64 +2,53 @@
 
 namespace App\Controller\Api\Event;
 
-use App\Entity\Event;
-use App\Repository\EventRepository;
+use App\Entity\User;
+use App\Exception\EventException;
+use App\Service\Event\EventFiltersParser;
+use App\Service\Event\EventListPresenter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\AsController;
-use Symfony\Component\Serializer\SerializerInterface;
 
+/**
+ * Catalogue des événements.
+ *
+ * Accès public, mais la **visibilité dépend de l'appelant** :
+ * - tout le monde (anonyme compris) ne voit que les événements **publiés** ;
+ * - le super administrateur (`ROLE_SUPER_ADMIN`, jeton JWT) garde la vue de
+ *   gestion : brouillons compris.
+ * Réclamer les brouillons (`status=draft`) sans être super administrateur → 403.
+ *
+ * Mêmes filtres, tri et pagination que `GET /api/events/me` : voir
+ * {@see EventFiltersParser}.
+ */
 #[AsController]
 class GetEventsController extends AbstractController
 {
     public function __construct(
-        private EventRepository $eventRepository,
-        private SerializerInterface $serializer
+        private readonly EventFiltersParser $parser,
+        private readonly EventListPresenter $presenter,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
     {
-        // Récupérer les paramètres de pagination
-        $page = max(1, (int) $request->query->get('page', 1));
-        $itemsPerPage = min(20, max(1, (int) $request->query->get('itemsPerPage', 10)));
+        $user = $this->getUser();
+        $filters = $this->parser->parse($request);
 
-        // Calculer l'offset
-        $offset = ($page - 1) * $itemsPerPage;
+        if (!$user instanceof User || !$user->isSuperAdmin()) {
+            if ($filters->published === false) {
+                throw EventException::brouillonsReserves();
+            }
+            $filters = $filters->withPublished(true);
+        }
 
-        // Récupérer le nombre total d'événements
-        $totalItems = $this->eventRepository->count([]);
+        [$page, $itemsPerPage] = $this->parser->pagination($request);
 
-        // Récupérer les événements paginés
-        $events = $this->eventRepository->findBy(
-            [],
-            ['createdAt' => 'DESC'],
-            $itemsPerPage,
-            $offset
-        );
-
-        // Sérialiser les événements
-        $serializedEvents = json_decode(
-            $this->serializer->serialize(
-                $events,
-                'json',
-                ['groups' => ['events:lists']]
-            ),
-            true
-        );
-
-        // Formater la réponse selon le format demandé
-        $response = [
+        return $this->json([
             'message' => 'Liste des événements récupérée avec succès',
             'status' => 200,
-            'data' => [
-                'itemsTotal' => $totalItems,
-                'currentPage' => $page,
-                'nombreParPage' => $itemsPerPage,
-                'items' => $serializedEvents
-            ]
-        ];
-
-        return $this->json($response, 200);
+            'data' => $this->presenter->page($filters, null, $page, $itemsPerPage),
+        ], 200);
     }
 }

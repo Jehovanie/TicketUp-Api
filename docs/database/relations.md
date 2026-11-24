@@ -12,7 +12,7 @@ Chaque relation physique (une FK) est décrite des deux côtés : le côté **pr
 |---|---|---|---|---|---|---|---|---|---|---|
 | R1 | `Event::$category` | `Category` | ManyToOne | **propriétaire** | `event.category_id` | oui | `persist` | — | aucun (`NO ACTION`) | LAZY |
 | R1′ | `Category::$events` | `Event` | OneToMany | inverse | `mappedBy: category` | — | aucune | non | — | LAZY |
-| R2 | `Event::$organizer` | `Organizer` | ManyToOne | **propriétaire** | `event.organizer_id` | non | `persist` | — | aucun (`NO ACTION`) | LAZY |
+| R2 | `Event::$organizer` | `Organizer` | ManyToOne | **propriétaire** | `event.organizer_id` | non | aucune | — | aucun (`NO ACTION`) | LAZY |
 | R2′ | `Organizer::$events` | `Event` | OneToMany | inverse | `mappedBy: organizer` | — | aucune | non | — | LAZY |
 | R3 | `Event::$location` | `Location` | ManyToOne | **propriétaire** | `event.location_id` | non | `persist` | — | aucun (`NO ACTION`) | LAZY |
 | R3′ | `Location::$events` | `Event` | OneToMany | inverse | `mappedBy: location` | — | aucune | non | — | LAZY |
@@ -30,12 +30,14 @@ Chaque relation physique (une FK) est décrite des deux côtés : le côté **pr
 | R11 | `OrderItem::$ticketType` | `TicketType` | ManyToOne (unidirectionnel) | **propriétaire** | `order_item.ticket_type_id` | non | aucune | — | **`RESTRICT`** | LAZY |
 | R12 | `Ticket::$orderItem` | `OrderItem` | ManyToOne | **propriétaire** | `ticket.order_item_id` | non | aucune | — | **`CASCADE`** | LAZY |
 | R12′ | `OrderItem::$tickets` | `Ticket` | OneToMany | inverse | `mappedBy: orderItem` | — | `persist` | non | — | LAZY |
+| R13 | `OrganizerPaymentMethod::$organizer` | `Organizer` | ManyToOne | **propriétaire** | `organizer_payment_method.organizer_id` | non | aucune | — | **`CASCADE`** | LAZY |
+| R13′ | `Organizer::$paymentMethods` | `OrganizerPaymentMethod` | OneToMany | inverse | `mappedBy: organizer` | — | `persist` | **oui** | — | LAZY |
 
-**11 relations physiques** (11 FK) : les 6 du socle, bidirectionnelles, et les 5 de la commande de billets (R8–R12), dont 3 unidirectionnelles pour ne rien ajouter à `User`, `Event` et `TicketType`. Plus **1 relation logique** sans FK. Les listes de commandes chargent lignes et billets en une seconde requête (`TicketOrderRepository::loadDetails()`).
+**12 relations physiques** (12 FK) : les 6 du socle, bidirectionnelles, et les 5 de la commande de billets (R8–R12) et 1 pour les comptes mobile money (R13), dont 3 unidirectionnelles pour ne rien ajouter à `User`, `Event` et `TicketType`. Plus **1 relation logique** sans FK. Les listes de commandes chargent lignes et billets en une seconde requête (`TicketOrderRepository::loadDetails()`).
 
 ## Ce que produisent les suppressions
 
-Le comportement diffère selon que la suppression passe **par l'ORM** (`$em->remove()`) ou **directement en SQL** : les cascades ORM ne sont pas reflétées par des `ON DELETE` en base, sauf pour `organizer_membership`.
+Le comportement diffère selon que la suppression passe **par l'ORM** (`$em->remove()`) ou **directement en SQL** : les cascades ORM ne sont pas reflétées par des `ON DELETE` en base, sauf pour `organizer_membership` et `organizer_payment_method`.
 
 | Suppression de… | Via l'ORM | Via SQL direct |
 |---|---|---|
@@ -56,9 +58,10 @@ Aucun endpoint de suppression d'événement, de catégorie, de lieu, d'organisat
 
 - `$event->removeTicketType($t)` ⇒ `DELETE` du tarif (comportement voulu ; refusé par la base si le tarif a été commandé).
 - `$user->removeMembership($m)` / `$organizer->removeMembership($m)` ⇒ `DELETE` de l'appartenance (utilisé par `OrganizerMembershipService::revoke()`).
+- `$organizer->removePaymentMethod($m)` ⇒ `DELETE` du compte mobile money. Aucun endpoint ne le fait aujourd'hui ; quand il existera, il devra refuser de retirer le **dernier** compte (BR-ORG-10).
 
 `Location::$events` et `Organizer::$events` n'ont plus d'`orphanRemoval` (Q-05, corrigé) : `removeEvent()` ne fait que retirer l'événement de la collection en mémoire. Pour changer le lieu ou l'organisation d'un événement, passer par `$event->setLocation()` / `setOrganizer()`.
 
 ## Cascade `persist` depuis `Event`
 
-Les trois `ManyToOne` de `Event` sont en `cascade: ['persist']` pour permettre à `src/Serializer/Denormalizer/EventInputDenormalizer.php` de créer à la volée une catégorie, une organisation ou un lieu décrits dans le corps de `POST /api/events`. Conséquence : une organisation créée ainsi n'a **aucun membre** (aucune ligne `organizer_membership`) — voir [`business-rules.md`](business-rules.md#br-org-04).
+Les `ManyToOne` `category` et `location` de `Event` sont en `cascade: ['persist']` pour permettre à `src/Serializer/Denormalizer/EventInputDenormalizer.php` de créer à la volée une catégorie ou un lieu décrits dans le corps de `POST /api/events`. `organizer` n'a plus de cascade (2026-11-24) : l'organisation doit exister (`POST /api/organizers`), ce qui garantit qu'elle a un responsable et un compte mobile money.

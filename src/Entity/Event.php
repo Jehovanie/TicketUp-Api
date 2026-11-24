@@ -157,6 +157,11 @@ use Symfony\Component\Serializer\Annotation\Groups;
         new \ApiPlatform\Metadata\Post(
             uriTemplate: '/events',
             denormalizationContext: ["groups" => ['events:create']],
+            openapi: new \ApiPlatform\OpenApi\Model\Operation(
+                description: "L'organisation n'est **pas** créée ici : `organizer.id` est obligatoire "
+                    . "(`400` sinon). Créez-la d'abord via `POST /api/organizers`. Catégorie et lieu sont "
+                    . "liés par `id` ou créés à partir des champs fournis."
+            ),
         ),
     ]
 )]
@@ -202,7 +207,7 @@ class Event
     #[Groups(['events:lists', 'events:details', 'events:create'])]
     private ?Category $category = null;
 
-    #[ORM\ManyToOne(inversedBy: 'events', cascade: ['persist'])]
+    #[ORM\ManyToOne(inversedBy: 'events')]
     #[ORM\JoinColumn(nullable: false)]
     #[Groups(['events:details', 'events:create'])]
     private ?Organizer $organizer = null;
