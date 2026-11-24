@@ -76,11 +76,11 @@ final class OrganizerEventsAndSearchApiTest extends ApiTestCase
         $published = $this->json($this->request('GET', $this->url('?status=published'), null, $this->owner));
         self::assertSame(4, $published['data']['itemsTotal']);
 
-        $upcoming = $this->request('GET', $this->url('?period=upcoming'), null, $this->owner);
+        $upcoming = $this->request('GET', $this->url('?period=upcoming&sort=startedAt:asc'), null, $this->owner);
         self::assertSame(
             [$this->events['upcoming']->getId(), $this->events['draft']->getId(), $this->events['later']->getId()],
             $this->ids($upcoming),
-            'À venir : le plus proche d’abord.'
+            'Tri explicite : le plus proche d’abord.'
         );
 
         self::assertSame(
@@ -94,7 +94,7 @@ final class OrganizerEventsAndSearchApiTest extends ApiTestCase
 
         self::assertSame(
             [$this->events['upcoming']->getId(), $this->events['later']->getId()],
-            $this->ids($this->request('GET', $this->url('?period=upcoming&status=published'), null, $this->owner))
+            $this->ids($this->request('GET', $this->url('?period=upcoming&status=published&sort=startedAt:asc'), null, $this->owner))
         );
     }
 
@@ -125,6 +125,7 @@ final class OrganizerEventsAndSearchApiTest extends ApiTestCase
         yield 'statut inconnu' => ['?status=archived', 'status'];
         yield 'période inconnue' => ['?period=soon', 'period'];
         yield 'statut vide' => ['?status=', 'status'];
+        yield 'tri inconnu' => ['?sort=title:desc', 'sort'];
         yield 'statut tableau' => ['?status[]=draft', 'status'];
     }
 

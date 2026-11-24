@@ -3,8 +3,8 @@
 namespace App\Repository;
 
 use App\Entity\Event;
-use App\Entity\Organizer;
 use App\Entity\User;
+use App\Service\Event\EventFilters;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
@@ -100,103 +100,91 @@ class EventRepository extends ServiceEntityRepository
     }
 
     /**
-     * Événements des organisations auxquelles l'utilisateur appartient.
+     * Liste filtrée et triée — **une seule requête** pour `/api/events`,
+     * `/api/events/me` et `/api/organizers/{id}/events`.
      *
-     * Le lien n'est pas direct : un événement appartient à une organisation, et
-     * c'est `OrganizerMembership` qui rattache la personne à cette organisation.
-     * D'où la double jointure. L'unicité (utilisateur, organisation) garantit une
-     * seule ligne d'appartenance par organisation : pas de doublon d'événement,
-     * donc pas de `DISTINCT` à payer.
+     * `$scope` restreint aux événements des organisations dont cet utilisateur
+     * est membre. Le lien n'est pas direct (un événement appartient à une
+     * organisation, `OrganizerMembership` rattache la personne) d'où la double
+     * jointure ; l'unicité (utilisateur, organisation) garantit une seule ligne
+     * d'appartenance : pas de doublon, donc pas de `DISTINCT`.
      *
-     * Aucun filtre sur `status` : c'est une vue de gestion, les brouillons de son
-     * organisation doivent rester visibles à celui qui les a écrits.
+     * Aucun filtre implicite sur `status` : c'est à l'appelant de décider si les
+     * brouillons sont visibles (`EventFilters::$published`).
      *
      * @return Event[]
      */
-    public function findByUser(User $user, ?int $limit = null, int $offset = 0): array
+    public function findFiltered(EventFilters $filters, ?User $scope, int $limit, int $offset = 0): array
     {
-        // Catégorie et lieu sont dans le groupe `events:lists` : les charger ici
-        // évite deux requêtes par événement au moment de la sérialisation. Les
-        // billets, eux, sont une collection — la joindre fausserait `setMaxResults`.
-        $qb = $this->createQueryBuilder('e')
+        // Catégorie et lieu sont dans `events:lists` : les charger ici évite deux
+        // requêtes par événement à la sérialisation. Les billets, eux, sont une
+        // collection — les joindre fausserait `setMaxResults`.
+        $qb = $this->filteredQuery($filters, $scope)
             ->addSelect('c', 'l')
             ->leftJoin('e.category', 'c')
-            ->leftJoin('e.location', 'l')
-            ->join('e.organizer', 'o')
-            ->join('o.memberships', 'm')
-            ->andWhere('m.user = :user')
-            ->setParameter('user', $user)
-            ->orderBy('e.createdAt', 'DESC');
+            ->leftJoin('e.location', 'l');
 
-        if ($limit !== null) {
-            $qb->setMaxResults($limit)->setFirstResult(max(0, $offset));
+        [$field, $direction] = EventFilters::SORTS[$filters->sort];
+
+        return $qb
+            ->orderBy('e.' . $field, $direction)
+            ->addOrderBy('e.id', 'DESC') // départage les ex æquo : pagination stable
+            ->setMaxResults($limit)
+            ->setFirstResult(max(0, $offset))
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function countFiltered(EventFilters $filters, ?User $scope): int
+    {
+        return (int) $this->filteredQuery($filters, $scope)
+            ->select('COUNT(e.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    private function filteredQuery(EventFilters $filters, ?User $scope): QueryBuilder
+    {
+        $qb = $this->createQueryBuilder('e');
+
+        if ($scope !== null) {
+            $qb->join('e.organizer', 'o')
+                ->join('o.memberships', 'm')
+                ->andWhere('m.user = :scope')
+                ->setParameter('scope', $scope);
         }
 
-        return $qb->getQuery()->getResult();
-    }
+        if ($filters->organizerId !== null) {
+            $qb->andWhere('IDENTITY(e.organizer) = :organizer')->setParameter('organizer', $filters->organizerId);
+        }
 
-    public function countByUser(User $user): int
-    {
-        return (int) $this->createQueryBuilder('e')
-            ->select('COUNT(e.id)')
-            ->join('e.organizer', 'o')
-            ->join('o.memberships', 'm')
-            ->andWhere('m.user = :user')
-            ->setParameter('user', $user)
-            ->getQuery()
-            ->getSingleScalarResult();
-    }
+        if ($filters->categoryId !== null) {
+            $qb->andWhere('IDENTITY(e.category) = :category')->setParameter('category', $filters->categoryId);
+        }
 
-    public const PERIOD_UPCOMING = 'upcoming';
-    public const PERIOD_ONGOING = 'ongoing';
-    public const PERIOD_PAST = 'past';
+        if ($filters->title !== null) {
+            $qb->andWhere('LOWER(e.title) LIKE :title')
+                ->setParameter('title', '%' . addcslashes(mb_strtolower($filters->title), '%_\\') . '%');
+        }
 
-    /**
-     * Événements d'une organisation, brouillons compris (vue de gestion).
-     *
-     * @param ?bool   $published `true` = publiés, `false` = brouillons, `null` = tous
-     * @param ?string $period    `PERIOD_*` ou `null` : à venir (début futur), en cours, passé (fin révolue)
-     *
-     * @return Event[]
-     */
-    public function findByOrganizer(Organizer $organizer, ?bool $published, ?string $period, int $limit, int $offset): array
-    {
-        $qb = $this->organizerQuery($organizer, $published, $period)
-            ->addSelect('c', 'l')
-            ->leftJoin('e.category', 'c')
-            ->leftJoin('e.location', 'l')
-            // À venir : le plus proche d'abord ; sinon le plus récent d'abord.
-            ->orderBy('e.startedAt', $period === self::PERIOD_UPCOMING ? 'ASC' : 'DESC')
-            ->addOrderBy('e.id', 'DESC')
-            ->setMaxResults($limit)
-            ->setFirstResult(max(0, $offset));
+        if ($filters->published !== null) {
+            $qb->andWhere('e.status = :published')->setParameter('published', $filters->published);
+        }
 
-        return $qb->getQuery()->getResult();
-    }
-
-    public function countByOrganizer(Organizer $organizer, ?bool $published, ?string $period): int
-    {
-        return (int) $this->organizerQuery($organizer, $published, $period)
-            ->select('COUNT(e.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
-    }
-
-    private function organizerQuery(Organizer $organizer, ?bool $published, ?string $period): QueryBuilder
-    {
-        $qb = $this->createQueryBuilder('e')
-            ->andWhere('e.organizer = :organizer')
-            ->setParameter('organizer', $organizer);
-
-        if ($published !== null) {
-            $qb->andWhere('e.status = :published')->setParameter('published', $published);
+        // Bornes sur le début de l'événement, incluses ; `endDate` couvre toute la
+        // journée (strictement avant minuit le lendemain).
+        if ($filters->startDate !== null) {
+            $qb->andWhere('e.startedAt >= :startDate')->setParameter('startDate', $filters->startDate);
+        }
+        if ($filters->endDate !== null) {
+            $qb->andWhere('e.startedAt < :endDateExclusive')->setParameter('endDateExclusive', $filters->endDate->modify('+1 day'));
         }
 
         $now = new \DateTimeImmutable();
-        match ($period) {
-            self::PERIOD_UPCOMING => $qb->andWhere('e.startedAt > :now')->setParameter('now', $now),
-            self::PERIOD_ONGOING => $qb->andWhere('e.startedAt <= :now AND e.endAt >= :now')->setParameter('now', $now),
-            self::PERIOD_PAST => $qb->andWhere('e.endAt < :now')->setParameter('now', $now),
+        match ($filters->period) {
+            EventFilters::PERIOD_UPCOMING => $qb->andWhere('e.startedAt > :now')->setParameter('now', $now),
+            EventFilters::PERIOD_ONGOING => $qb->andWhere('e.startedAt <= :now AND e.endAt >= :now')->setParameter('now', $now),
+            EventFilters::PERIOD_PAST => $qb->andWhere('e.endAt < :now')->setParameter('now', $now),
             default => null,
         };
 

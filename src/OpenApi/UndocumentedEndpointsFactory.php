@@ -71,6 +71,8 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
         $organizers = $paths->getPath('/api/organizers') ?? new PathItem();
         $paths->addPath('/api/organizers', $organizers->withPost($this->creerOrganisation()));
 
+        $this->documenterListesEvenements($paths);
+
         $paths->addPath('/api/organizers/{organizerId}', new PathItem(
             get: $this->detailOrganisation(),
             patch: $this->modifierOrganisation(),
@@ -410,6 +412,66 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
         );
     }
 
+    // --------------------------------------------- Listes d'événements (filtres)
+
+    /**
+     * `GET /api/events` et `GET /api/events/me` sont déclarés dans `#[ApiResource]`
+     * (`Event`) : on complète leur opération plutôt que de les redéclarer, pour que
+     * les trois listes d'événements partagent **la même** description de filtres.
+     */
+    private function documenterListesEvenements(\ApiPlatform\OpenApi\Model\Paths $paths): void
+    {
+        $regles = "\n\n**Filtres** (tous facultatifs, combinables ; absent = « tous ») : `title`, `organizer`, "
+            . "`category`, `status`, `period`, `startDate`/`endDate`, `sort`. Une valeur inconnue ou mal formée "
+            . "répond `400` avec les valeurs acceptées. `itemsTotal` compte **avec** les filtres.";
+
+        $liste = $paths->getPath('/api/events');
+        if ($liste?->getGet() !== null) {
+            $paths->addPath('/api/events', $liste->withGet($liste->getGet()
+                ->withSummary('Lister les événements')
+                ->withDescription(
+                    "Accès public, mais **la visibilité dépend de l'appelant** : anonyme et utilisateurs "
+                    . "ordinaires ne voient que les événements **publiés** ; le `ROLE_SUPER_ADMIN` (jeton JWT) "
+                    . "garde la vue de gestion, brouillons compris. Réclamer `status=draft` sans être "
+                    . "super administrateur répond `403`." . $regles
+                )
+                ->withParameters($this->filtresEvenements(true))));
+        }
+
+        $mes = $paths->getPath('/api/events/me');
+        if ($mes?->getGet() !== null) {
+            $paths->addPath('/api/events/me', $mes->withGet($mes->getGet()
+                ->withDescription(
+                    "Événements portés par les organisations dont l'utilisateur connecté est membre, "
+                    . "**brouillons compris**. Même réponse que `/api/events`, restreinte à ce qui le concerne. "
+                    . "`organizer` doit désigner une de **vos** organisations, sinon `403`. "
+                    . "Requiert un jeton JWT ; répond `401` sans authentification." . $regles
+                )
+                ->withParameters($this->filtresEvenements(true))
+                ->withSecurity($this->jwt())));
+        }
+    }
+
+    /** @return Parameter[] */
+    private function filtresEvenements(bool $avecOrganisation): array
+    {
+        $q = static fn (string $name, string $description, array $schema) =>
+            new Parameter(name: $name, in: 'query', required: false, description: $description, schema: $schema);
+
+        return array_values(array_filter([
+            $q('page', 'Numéro de page (défaut : 1).', ['type' => 'integer', 'default' => 1]),
+            $q('itemsPerPage', 'Éléments par page (défaut : 10, maximum : 20).', ['type' => 'integer', 'default' => 10, 'maximum' => 20]),
+            $q('title', 'Recherche partielle dans le titre, insensible à la casse. Vide = pas de filtre.', ['type' => 'string']),
+            $avecOrganisation ? $q('organizer', 'Identifiant de l’organisation.', ['type' => 'integer', 'minimum' => 1]) : null,
+            $q('category', 'Identifiant de la catégorie (même nom que dans `/events/search`).', ['type' => 'integer', 'minimum' => 1]),
+            $q('status', 'Publié ou brouillon. `draft` est réservé au super administrateur sur `/api/events`.', ['type' => 'string', 'enum' => ['published', 'draft']]),
+            $q('period', 'Position dans le temps : `upcoming` (début futur), `ongoing` (en cours), `past` (fin révolue).', ['type' => 'string', 'enum' => ['upcoming', 'ongoing', 'past']]),
+            $q('startDate', 'Début de l’événement au plus tôt (AAAA-MM-JJ), borne incluse.', ['type' => 'string', 'format' => 'date']),
+            $q('endDate', 'Début de l’événement au plus tard (AAAA-MM-JJ), borne incluse : couvre toute la journée.', ['type' => 'string', 'format' => 'date']),
+            $q('sort', 'Tri (défaut : `createdAt:desc`).', ['type' => 'string', 'enum' => ['createdAt:desc', 'startedAt:asc', 'startedAt:desc', 'title:asc'], 'default' => 'createdAt:desc']),
+        ]));
+    }
+
     // ------------------------------------- Gestion d'une organisation (membres)
 
     private function detailOrganisation(): Operation
@@ -526,17 +588,9 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
             summary: 'Événements d’une organisation',
             description: "Droit requis : **ORGANIZER_VIEW**.\n\n"
                 . "Événements d'**une** organisation, **brouillons compris** (`GET /api/events/me` agrège "
-                . "toutes celles de l'utilisateur). Même réponse que `/api/events`. Tri : le plus récent "
-                . "d'abord, sauf `period=upcoming` (le plus proche d'abord).\n\n"
-                . "Filtres combinables : `status` (`published`, `draft`) et `period` — `upcoming` (début "
-                . "futur), `ongoing` (en cours), `past` (fin révolue).",
-            parameters: [
-                $this->organizerIdParam(),
-                new Parameter(name: 'page', in: 'query', required: false, description: 'Numéro de page (défaut : 1)', schema: ['type' => 'integer', 'default' => 1]),
-                new Parameter(name: 'itemsPerPage', in: 'query', required: false, description: 'Éléments par page (défaut : 10, maximum : 20)', schema: ['type' => 'integer', 'default' => 10, 'maximum' => 20]),
-                new Parameter(name: 'status', in: 'query', required: false, description: 'Publié ou brouillon.', schema: ['type' => 'string', 'enum' => ['published', 'draft']]),
-                new Parameter(name: 'period', in: 'query', required: false, description: 'Position dans le temps.', schema: ['type' => 'string', 'enum' => ['upcoming', 'ongoing', 'past']]),
-            ],
+                . "toutes celles de l'utilisateur). Mêmes filtres, tri et pagination que `/api/events` ; "
+                . "l'organisation est fixée par l'URL.",
+            parameters: array_merge([$this->organizerIdParam()], $this->filtresEvenements(false)),
             security: $this->jwt(),
         );
     }

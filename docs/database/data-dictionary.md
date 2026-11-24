@@ -192,7 +192,7 @@ Remarques valables pour **toutes** les tables :
 
   | Nom | Colonnes | Type | Justification |
   |---|---|---|---|
-  | `uniq_membership_user_organizer` | `(user_id, organizer_id)` | UNIQUE | Un seul rôle par personne et par organisation (commentaire de l'entité). Garantit aussi l'absence de doublons dans `EventRepository::findByUser()` (pas besoin de `DISTINCT`). |
+  | `uniq_membership_user_organizer` | `(user_id, organizer_id)` | UNIQUE | Un seul rôle par personne et par organisation (commentaire de l'entité). Garantit aussi l'absence de doublons dans `EventRepository::findFiltered()` avec `$scope` (pas besoin de `DISTINCT`). |
   | `idx_membership_organizer_role` | `(organizer_id, role)` | INDEX | `countByOrganizerAndRole()` / `findByOrganizerAndRole()` : compter les responsables (invariant « au moins un owner »). |
   | `IDX_E2DB4746A76ED395` | `(user_id)` | INDEX | Index FK auto-généré ; redondant avec le préfixe de l'index unique. |
   | `IDX_E2DB4746876C4DDA` | `(organizer_id)` | INDEX | Index FK auto-généré ; redondant avec le préfixe de `idx_membership_organizer_role`. |
