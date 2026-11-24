@@ -72,6 +72,10 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
         $paths->addPath('/api/organizers', $organizers->withPost($this->creerOrganisation()));
 
         $this->documenterListesEvenements($paths);
+        // `GET /api/events/{id}` est déjà documenté (`#[ApiResource]`) : on lui ajoute le `PATCH`.
+        $evenement = $paths->getPath('/api/events/{id}') ?? new PathItem();
+        $paths->addPath('/api/events/{id}', $evenement->withPatch($this->modifierEvenement()));
+        $paths->addPath('/api/events/{id}/publish', new PathItem(post: $this->publierEvenement()));
 
         $paths->addPath('/api/organizers/{organizerId}', new PathItem(
             get: $this->detailOrganisation(),
@@ -408,6 +412,99 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                     ],
                 ]
             ), true),
+            security: $this->jwt(),
+        );
+    }
+
+    private function modifierEvenement(): Operation
+    {
+        return new Operation(
+            operationId: 'api_event_update',
+            tags: ['Event'],
+            responses: [
+                '200' => new Response('Événement modifié ; renvoie sa fiche (mêmes champs que `GET /api/events/{id}`).', $this->contenu($this->enveloppe(['type' => 'object']))),
+                '400' => $this->erreurMetier(
+                    'Corps sans champ modifiable, champ vide, trop long ou mal formé, dates incohérentes, '
+                    . 'catégorie ou lieu inconnus, tentative de changer l’organisation. Rien n’est écrit.'
+                ),
+                '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '403' => new Response(
+                    'Pas membre de l’organisation (réponse Symfony, hors enveloppe), ou clé `status` envoyée par '
+                    . 'un simple membre (réponse enveloppée).'
+                ),
+                '404' => $this->erreurMetier('Événement introuvable.'),
+                '409' => $this->erreurMetier(
+                    'Publication refusée (aucun billet, date de fin passée), dépublication d’un événement '
+                    . 'publié, ou fin dans le passé sur un événement publié.'
+                ),
+            ],
+            summary: 'Modifier un événement',
+            description: "Modification **partielle** : seuls les champs présents changent, au moins un est requis.\n\n"
+                . "**Droits** (sur l'organisation de l'événement) : **tout membre** (membre, administrateur, "
+                . "responsable) peut modifier le contenu. La clé **`status`** — publier — est réservée aux "
+                . "**administrateurs et responsables** (`ORGANIZER_EDIT`) : un simple membre qui l'envoie reçoit "
+                . "`403`, même avec `false`, et rien n'est écrit.\n\n"
+                . "**Champs** : `title` (≤ 150), `description`, `startedAt` et `endAt` (ISO 8601, fin postérieure "
+                . "au début, jugée sur les valeurs finales), `category` (`{\"id\": 3}` ou `3`, `null` pour la "
+                . "retirer), `location` (idem, obligatoire), `status`. L'**organisation** ne change jamais "
+                . "(`400`) ; les **billets** ne se modifient pas ici.\n\n"
+                . "**`status`** : seul `true` publie, avec les mêmes règles que `POST /api/events/{id}/publish` "
+                . "(au moins un billet, fin future), appréciées **après** les autres modifications de la même "
+                . "requête. Déjà publié : sans effet. `false` est sans effet sur un brouillon et refusé (`409`) "
+                . "sur un événement publié. Un événement publié ne peut pas recevoir une date de fin passée (`409`).",
+            parameters: [new Parameter(name: 'id', in: 'path', required: true, description: 'Identifiant de l’événement.', schema: ['type' => 'integer'])],
+            requestBody: new RequestBody('Champs à modifier (tous facultatifs, un au moins)', $this->contenu(
+                [
+                    'type' => 'object',
+                    'minProperties' => 1,
+                    'properties' => [
+                        'title' => ['type' => 'string', 'maxLength' => 150],
+                        'description' => ['type' => 'string'],
+                        'startedAt' => ['type' => 'string', 'format' => 'date-time'],
+                        'endAt' => ['type' => 'string', 'format' => 'date-time'],
+                        'category' => ['oneOf' => [['type' => 'integer'], ['type' => 'object', 'properties' => ['id' => ['type' => 'integer']]]], 'nullable' => true],
+                        'location' => ['oneOf' => [['type' => 'integer'], ['type' => 'object', 'properties' => ['id' => ['type' => 'integer']]]]],
+                        'status' => ['type' => 'boolean', 'description' => '`true` : publier (admin ou responsable).'],
+                    ],
+                ],
+                ['title' => 'Concert de clôture', 'endAt' => '2027-01-15T23:00:00+03:00']
+            ), true),
+            security: $this->jwt(),
+        );
+    }
+
+    private function publierEvenement(): Operation
+    {
+        return new Operation(
+            operationId: 'api_event_publish',
+            tags: ['Event'],
+            responses: [
+                '200' => new Response('Événement publié, ou déjà publié.', $this->contenu($this->enveloppe([
+                    'type' => 'object',
+                    'properties' => [
+                        'id' => ['type' => 'integer'],
+                        'title' => ['type' => 'string'],
+                        'published' => ['type' => 'boolean', 'example' => true],
+                        'alreadyPublished' => ['type' => 'boolean', 'description' => '`true` si l’événement l’était déjà (appel rejoué).'],
+                    ],
+                ]))),
+                '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '403' => $this->accesRefuse(),
+                '404' => $this->erreurMetier('Événement introuvable.'),
+                '409' => $this->erreurMetier(
+                    'Règle de publication non respectée : aucun type de billet, ou date de fin passée. '
+                    . 'Le `message` est affichable tel quel.'
+                ),
+            ],
+            summary: 'Publier un événement',
+            description: "Passe l'événement de brouillon à publié, **sans corps**.\n\n"
+                . "Droit requis : **ORGANIZER_EDIT** sur l'organisation **de l'événement** (administrateur ou "
+                . "plus, ou `ROLE_SUPER_ADMIN`) ; un simple membre ou un tiers reçoit `403`.\n\n"
+                . "**Idempotent** : republier un événement déjà publié répond `200` (`alreadyPublished: true`), "
+                . "sans revalider les règles.\n\n"
+                . "Règles, pour un brouillon : au moins **un type de billet**, et une **date de fin future** "
+                . "(un événement en cours peut être publié). Sinon `409`.",
+            parameters: [new Parameter(name: 'id', in: 'path', required: true, description: 'Identifiant de l’événement.', schema: ['type' => 'integer'])],
             security: $this->jwt(),
         );
     }
