@@ -36,7 +36,7 @@ Remarques valables pour **toutes** les tables :
   - `FK_3BAE0AA712469DE2` (`category_id` → `category.id`) — pas d'`ON DELETE` (= `NO ACTION`).
   - `FK_3BAE0AA7876C4DDA` (`organizer_id` → `organizer.id`) — pas d'`ON DELETE`.
   - `FK_3BAE0AA764D218E` (`location_id` → `location.id`) — pas d'`ON DELETE`.
-  - Côté ORM : `cascade: ['persist']` sur les trois `ManyToOne` (création à la volée par `EventInputDenormalizer`).
+  - Côté ORM : `cascade: ['persist']` sur `category` et `location` (création à la volée par `EventInputDenormalizer`) ; **pas** sur `organizer`, qui doit préexister.
 - **Index** : `IDX_3BAE0AA712469DE2 (category_id)`, `IDX_3BAE0AA7876C4DDA (organizer_id)`, `IDX_3BAE0AA764D218E (location_id)` — générés automatiquement par Doctrine sur chaque FK (jointures et contrôle d'intégrité). **Aucun index** sur `status`, `started_at`, `created_at` ou `title`, pourtant utilisés en filtre/tri (voir [`open-questions.md`](open-questions.md#q-10)).
 - **Statuts** : `status` booléen (`true` publié / `false` brouillon) ; les repositories publics filtrent `status = true` (`findByCategory()`, `searchEvents()`), la liste générale et « mes événements » ne filtrent pas.
 - **Particularités** : timestamps posés dans le constructeur (pas de lifecycle callback) ; collection `ticket_type` en `cascade: ['persist', 'remove']` + `orphanRemoval: true`.
@@ -119,12 +119,53 @@ Remarques valables pour **toutes** les tables :
 | `created_at` | `TIMESTAMP(0)` | non | — | — | — | Création (constructeur) |
 | `updated_at` | `TIMESTAMP(0)` | non | — | — | — | Modification (constructeur uniquement) |
 
-- **Clés étrangères** : aucune sortante. Référencée par `event.organizer_id` et `organizer_membership.organizer_id`.
+- **Clés étrangères** : aucune sortante. Référencée par `event.organizer_id`, `organizer_membership.organizer_id` et `organizer_payment_method.organizer_id`.
 - **Index / unicité** : aucun hors PK.
 - **Particularités** :
   - pas de colonne `user_id` : le lien avec les utilisateurs passe exclusivement par `organizer_membership` ;
   - collection `events` sans cascade ni `orphanRemoval` : une organisation qui porte des événements ne peut pas être supprimée (refus de la base, `409` dans l'API) ;
-  - collection `memberships` en `cascade: ['persist']` + `orphanRemoval: true`.
+  - collection `memberships` en `cascade: ['persist']` + `orphanRemoval: true` ;
+  - collection `paymentMethods` en `cascade: ['persist']` + `orphanRemoval: true`, **sans groupe de sérialisation** : jamais exposée par `/api/organizers` ni `/api/organizer/{id}` (publics), seulement par les vues réservées aux membres (`MembershipPresenter::organization()`).
+
+---
+
+## `organizer_payment_method`
+
+- **Entité** : `App\Entity\OrganizerPaymentMethod` — `src/Entity/OrganizerPaymentMethod.php`
+- **Repository** : `src/Repository/OrganizerPaymentMethodRepository.php`
+- **Migration** : `Version20261124124512`
+- **Rôle métier** : compte mobile money sur lequel une organisation encaisse ses billets. Une organisation en a **au moins un** (à la création) et **au plus un par opérateur**.
+
+| Colonne | Type SQL | Null | Défaut | Longueur | Contraintes | Description métier |
+|---|---|---|---|---|---|---|
+| `id` | `INT` (SERIAL) | non | séquence | — | PK | Identifiant technique |
+| `organizer_id` | `INT` | non | — | — | FK → `organizer.id` **ON DELETE CASCADE** ; UK (avec `provider`) | Organisation bénéficiaire |
+| `provider` | `VARCHAR` | non | — | 20 | enum PHP `MobileMoneyProvider` + `CHECK chk_payment_method_provider` ; UK (avec `organizer_id`) | Opérateur |
+| `phone_number` | `VARCHAR` | non | — | 20 | `CHECK chk_payment_method_phone` : `^\+261[0-9]{9}$` | Numéro mobile money, **normalisé** au format international |
+| `account_name` | `VARCHAR` | non | — | 100 | — | Nom du titulaire du compte, tel qu'il s'affiche chez l'opérateur |
+| `created_at` | `TIMESTAMP(0)` | non | — | — | — | Création (`PrePersist`) |
+| `updated_at` | `TIMESTAMP(0)` | non | — | — | — | Dernière modification (`PrePersist` / `PreUpdate`) |
+
+- **Clés étrangères** : `FK_5F76DEE2876C4DDA` (`organizer_id` → `organizer.id`) `ON DELETE CASCADE` : les comptes disparaissent avec l'organisation.
+- **Index et unicité** :
+
+  | Nom | Colonnes | Type | Justification |
+  |---|---|---|---|
+  | `uniq_payment_method_organizer_provider` | `(organizer_id, provider)` | UNIQUE | Un seul compte par opérateur et par organisation ; sert aussi à retrouver les comptes d'une organisation (préfixe `organizer_id`). |
+  | `IDX_5F76DEE2876C4DDA` | `(organizer_id)` | INDEX | Index FK auto-généré ; redondant avec le préfixe de l'unique (même cas que Q-31). |
+
+- **Valeurs de l'enum `provider`** (`src/Enum/MobileMoneyProvider.php`) :
+
+  | Valeur | Libellé | Préfixes de numéro acceptés |
+  |---|---|---|
+  | `mvola` | MVola (Telma) | `034`, `038` |
+  | `orange_money` | Orange Money | `032`, `037` |
+  | `airtel_money` | Airtel Money | `033` |
+
+- **Particularités** :
+  - le numéro est saisi sous toutes formes courantes (`034 12 345 67`, `+261 34 12 345 67`, `0034…`) et stocké `+261341234567` ;
+  - les valeurs de `provider` sont celles prévues pour `payment.provider` (voir [`design-orders.md`](design-orders.md)) ;
+  - les `CHECK` ne sont connus que de la migration (Doctrine ne les modélise pas) : la base de test doit être construite par les migrations.
 
 ---
 

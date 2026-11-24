@@ -8,6 +8,7 @@ use App\Enum\OrganizerRole;
 use App\Exception\OrganizerException;
 use App\Service\Organizer\MembershipPresenter;
 use App\Service\Organizer\OrganizerMembershipService;
+use App\Service\Organizer\PaymentMethodInputParser;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -28,8 +29,11 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
  * qui garantit l'invariant « une organisation a toujours au moins un
  * responsable » dès sa naissance.
  *
- * Corps attendu : `{ "name": "…", "email": "…", "phone": "…", "website": "…" }`
- * — les deux premiers sont obligatoires.
+ * Corps attendu :
+ * `{ "name": "…", "email": "…", "phone": "…", "website": "…",
+ *    "paymentMethods": [ { "provider": "mvola", "phoneNumber": "034 12 345 67", "accountName": "RAKOTO Jean" } ] }`
+ * — `name`, `email` et au moins un compte mobile money (MVola, Orange Money,
+ * Airtel Money ; un seul par opérateur) sont obligatoires.
  */
 #[AsController]
 #[Route('/api/organizers', name: 'api_organizer_create', methods: ['POST'])]
@@ -44,6 +48,7 @@ final class CreateOrganizerController extends AbstractController
         private readonly EntityManagerInterface $em,
         private readonly OrganizerMembershipService $membershipService,
         private readonly MembershipPresenter $presenter,
+        private readonly PaymentMethodInputParser $paymentParser,
     ) {}
 
     #[IsGranted('ROLE_USER')]
@@ -60,6 +65,12 @@ final class CreateOrganizerController extends AbstractController
             ->setEmail($this->email($payload))
             ->setPhone($this->optionalText($payload, 'phone', self::MAX_PHONE))
             ->setWebsite($this->website($payload));
+
+        // Validé avant tout accès à la base : une saisie fausse ne doit rien écrire.
+        // Persistés en cascade avec l'organisation, dans la même transaction.
+        foreach ($this->paymentParser->parse($payload['paymentMethods'] ?? null) as $method) {
+            $organizer->addPaymentMethod($method);
+        }
 
         // `assign()` cherche une appartenance existante, ce qui suppose une
         // organisation déjà identifiée : on l'enregistre donc d'abord. La

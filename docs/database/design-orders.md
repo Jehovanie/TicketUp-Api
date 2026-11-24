@@ -351,7 +351,7 @@ Nouveaux éléments applicatifs (pour mémoire) : entités `TicketOrder`, `Order
 | D-03 | Jusqu'à quand vend-on : avant `started_at` ou jusqu'à `end_at` ? | Jusqu'à `end_at` (utile pour les expositions qui durent plusieurs semaines) |
 | D-04 | Durée de réservation d'une commande en attente ? | 15 minutes |
 | D-05 | Paiement reçu après expiration de la commande ? | Accepté si les places sont encore disponibles (nouvelle réservation), sinon remboursement automatique |
-| D-06 | Prestataires de paiement (MVola, Orange Money, Airtel Money, carte) ? | Conditionne le lot 2 et les valeurs de `payment.provider` |
+| D-06 | Prestataires de paiement (MVola, Orange Money, Airtel Money, carte) ? | *(Partiellement tranché le 2026-11-24 : mobile money uniquement, MVola / Orange Money / Airtel Money ; comptes d'encaissement des organisations dans `organizer_payment_method`, mêmes valeurs `mvola` / `orange_money` / `airtel_money` que `payment.provider`. Reste à choisir : paiement manuel déclaratif ou API opérateur, et la carte.)* Conditionne le lot 2 |
 | D-07 | Bloquer aussi à la jauge du lieu (`location.size`) ? | Non : le quota par tarif suffit, l'organisateur reste responsable de la cohérence quotas / jauge |
 | D-08 | Billets nominatifs ? | `holder_name` facultatif |
 | D-09 | Fenêtre de vente par tarif et désactivation d'un tarif ? | Lot 2 : `ticket_type.sale_starts_at`, `sale_ends_at`, `is_active` |

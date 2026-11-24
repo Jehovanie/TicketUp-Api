@@ -345,22 +345,28 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                 ),
                 '400' => $this->erreurMetier(
                     'Saisie refusée : champ obligatoire vide, longueur au-delà de la colonne, '
-                    . 'email ou URL malformés.'
+                    . 'email ou URL malformés, `paymentMethods` absent ou vide, opérateur inconnu ou en double, '
+                    . 'numéro invalide ou incohérent avec l’opérateur.'
                 ),
                 '401' => new Response('Jeton absent, invalide ou expiré.'),
             ],
             summary: 'Créer une organisation',
-            description: "Seule façon de créer une organisation **gérable** : le créateur y est rattaché comme "
-                . "responsable dans la même transaction. Une organisation créée par le payload imbriqué de "
-                . "`POST /api/events` n'a aucun membre — elle n'apparaît donc dans aucun `/me` et personne n'a "
-                . "de droits dessus.\n\n"
-                . "`name` et `email` sont obligatoires ; `phone` et `website` facultatifs. L'email est "
-                . "normalisé en minuscules et **n'est pas unique** en base : deux organisations peuvent "
-                . "partager une adresse.",
+            description: "Seule façon de créer une organisation : le créateur y est rattaché comme "
+                . "responsable dans la même transaction. `POST /api/events` ne crée plus d'organisation à la "
+                . "volée : il faut d'abord la créer ici, puis fournir son `id` à l'événement.\n\n"
+                . "`name`, `email` et `paymentMethods` sont obligatoires ; `phone` et `website` facultatifs. "
+                . "L'email est normalisé en minuscules et **n'est pas unique** en base : deux organisations "
+                . "peuvent partager une adresse.\n\n"
+                . "**Comptes mobile money** (`paymentMethods`) : au moins un, **un seul par opérateur** "
+                . "(`mvola`, `orange_money`, `airtel_money`). Chaque compte porte le numéro et le nom du "
+                . "titulaire. Le numéro est accepté sous les formes usuelles (`034 12 345 67`, "
+                . "`+261 34 12 345 67`) et renvoyé normalisé `+261341234567` ; son préfixe doit correspondre à "
+                . "l'opérateur : MVola `034`/`038`, Orange Money `032`/`037`, Airtel Money `033`. Ces comptes "
+                . "ne sont visibles que des membres de l'organisation.",
             requestBody: new RequestBody('Informations de l’organisation', $this->contenu(
                 [
                     'type' => 'object',
-                    'required' => ['name', 'email'],
+                    'required' => ['name', 'email', 'paymentMethods'],
                     'properties' => [
                         'name' => ['type' => 'string', 'maxLength' => 100],
                         'email' => ['type' => 'string', 'format' => 'email', 'maxLength' => 100],
@@ -372,6 +378,13 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                             'nullable' => true,
                             'example' => 'https://antsika.mg',
                         ],
+                        'paymentMethods' => [
+                            'type' => 'array',
+                            'minItems' => 1,
+                            'maxItems' => 3,
+                            'description' => 'Comptes mobile money d’encaissement, un par opérateur.',
+                            'items' => ['$ref' => '#/components/schemas/CompteMobileMoneyEntree'],
+                        ],
                     ],
                 ],
                 [
@@ -379,6 +392,10 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                     'email' => 'contact@antsika.mg',
                     'phone' => '+261 34 00 000 00',
                     'website' => 'https://antsika.mg',
+                    'paymentMethods' => [
+                        ['provider' => 'mvola', 'phoneNumber' => '034 12 345 67', 'accountName' => 'RAKOTO Jean'],
+                        ['provider' => 'orange_money', 'phoneNumber' => '032 12 345 67', 'accountName' => 'RAKOTO Jean'],
+                    ],
                 ]
             ), true),
             security: $this->jwt(),
@@ -694,6 +711,37 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
             ],
         ];
 
+        $provider = [
+            'type' => 'string',
+            'enum' => ['mvola', 'orange_money', 'airtel_money'],
+            'description' => 'Opérateur mobile money. Saisie tolérante (`MVola`, `Orange Money`…).',
+        ];
+
+        $schemas['CompteMobileMoneyEntree'] = [
+            'type' => 'object',
+            'required' => ['provider', 'phoneNumber', 'accountName'],
+            'properties' => [
+                'provider' => $provider,
+                'phoneNumber' => [
+                    'type' => 'string',
+                    'example' => '034 12 345 67',
+                    'description' => 'Numéro malgache, avec ou sans `+261`. Préfixes : MVola 034/038, '
+                        . 'Orange Money 032/037, Airtel Money 033.',
+                ],
+                'accountName' => ['type' => 'string', 'maxLength' => 100, 'description' => 'Nom du titulaire du compte.'],
+            ],
+        ];
+
+        $schemas['CompteMobileMoney'] = [
+            'type' => 'object',
+            'properties' => [
+                'provider' => $provider,
+                'providerLabel' => ['type' => 'string', 'enum' => ['MVola', 'Orange Money', 'Airtel Money']],
+                'phoneNumber' => ['type' => 'string', 'example' => '+261341234567', 'description' => 'Format international normalisé.'],
+                'accountName' => ['type' => 'string'],
+            ],
+        ];
+
         $schemas['OrganisationUtilisateur'] = [
             'type' => 'object',
             'description' => 'Une organisation vue depuis un utilisateur, avec le rôle qu’il y tient.',
@@ -703,6 +751,11 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                 'email' => ['type' => 'string', 'format' => 'email', 'nullable' => true],
                 'phone' => ['type' => 'string', 'nullable' => true],
                 'website' => ['type' => 'string', 'nullable' => true],
+                'paymentMethods' => [
+                    'type' => 'array',
+                    'description' => 'Comptes mobile money de l’organisation (réservés à ses membres).',
+                    'items' => ['$ref' => '#/components/schemas/CompteMobileMoney'],
+                ],
                 'role' => $role,
                 'roleLabel' => $roleLabel,
                 'isOwner' => ['type' => 'boolean'],

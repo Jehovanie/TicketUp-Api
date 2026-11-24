@@ -2,6 +2,8 @@
 
 namespace App\Exception;
 
+use App\Enum\MobileMoneyProvider;
+
 /**
  * Erreurs de saisie à la création d'une organisation.
  *
@@ -34,6 +36,70 @@ final class OrganizerException extends BusinessException
     {
         return new self(
             sprintf('« %s » n’est pas une adresse web valide (attendu : https://exemple.mg).', $website),
+            400
+        );
+    }
+
+    public static function organisateurRequis(): self
+    {
+        return new self(
+            'Le champ « organizer.id » est obligatoire : créez d’abord l’organisation via POST /api/organizers.',
+            400
+        );
+    }
+
+    // ---------------------------------------------------- Moyens de paiement
+
+    public static function paiementRequis(): self
+    {
+        return new self(
+            'Au moins un compte mobile money (MVola, Orange Money ou Airtel Money) est obligatoire.',
+            400
+        );
+    }
+
+    public static function paiementInvalide(): self
+    {
+        return new self(
+            'Le champ « paymentMethods » doit être une liste d’objets '
+            . '{ "provider", "phoneNumber", "accountName" }.',
+            400
+        );
+    }
+
+    public static function operateurInconnu(string $valeur): self
+    {
+        return new self(
+            sprintf('« %s » n’est pas un opérateur pris en charge (attendu : mvola, orange_money, airtel_money).', $valeur),
+            400
+        );
+    }
+
+    public static function operateurEnDouble(MobileMoneyProvider $provider): self
+    {
+        return new self(
+            sprintf('Un seul compte %s est autorisé par organisation.', $provider->label()),
+            400
+        );
+    }
+
+    public static function numeroInvalide(string $numero): self
+    {
+        return new self(
+            sprintf('« %s » n’est pas un numéro malgache valide (attendu : 0XX XX XXX XX ou +261 XX XX XXX XX).', $numero),
+            400
+        );
+    }
+
+    public static function numeroIncompatible(string $numero, MobileMoneyProvider $provider): self
+    {
+        return new self(
+            sprintf(
+                '« %s » n’est pas un numéro %s (préfixes attendus : %s).',
+                $numero,
+                $provider->label(),
+                implode(', ', array_map(static fn (string $p) => '0' . $p, $provider->prefixes()))
+            ),
             400
         );
     }

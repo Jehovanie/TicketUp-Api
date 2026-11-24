@@ -2,7 +2,9 @@
 
 namespace App\Service\Organizer;
 
+use App\Entity\Organizer;
 use App\Entity\OrganizerMembership;
+use App\Entity\OrganizerPaymentMethod;
 
 /**
  * Mise en forme des appartenances pour les réponses JSON.
@@ -43,11 +45,32 @@ final class MembershipPresenter
             'email' => $organizer?->getEmail(),
             'phone' => $organizer?->getPhone(),
             'website' => $organizer?->getWebsite(),
+            'paymentMethods' => $this->paymentMethods($organizer),
             'role' => $membership->getRole()->value,
             'roleLabel' => $membership->getRole()->label(),
             'isOwner' => $membership->isOwner(),
             'joinedAt' => $membership->getCreatedAt()?->format(\DateTimeInterface::ATOM),
         ];
+    }
+
+    /**
+     * Comptes mobile money de l'organisation, réservés à ses membres : cette
+     * vue n'est servie qu'aux personnes rattachées à l'organisation.
+     */
+    private function paymentMethods(?Organizer $organizer): array
+    {
+        if ($organizer === null) {
+            return [];
+        }
+
+        return array_values($organizer->getPaymentMethods()->map(
+            static fn (OrganizerPaymentMethod $m) => [
+                'provider' => $m->getProvider()?->value,
+                'providerLabel' => $m->getProvider()?->label(),
+                'phoneNumber' => $m->getPhoneNumber(),
+                'accountName' => $m->getAccountName(),
+            ]
+        )->toArray());
     }
 
     /**
