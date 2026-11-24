@@ -3,8 +3,10 @@
 namespace App\Repository;
 
 use App\Entity\Event;
+use App\Entity\Organizer;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -143,5 +145,61 @@ class EventRepository extends ServiceEntityRepository
             ->setParameter('user', $user)
             ->getQuery()
             ->getSingleScalarResult();
+    }
+
+    public const PERIOD_UPCOMING = 'upcoming';
+    public const PERIOD_ONGOING = 'ongoing';
+    public const PERIOD_PAST = 'past';
+
+    /**
+     * Événements d'une organisation, brouillons compris (vue de gestion).
+     *
+     * @param ?bool   $published `true` = publiés, `false` = brouillons, `null` = tous
+     * @param ?string $period    `PERIOD_*` ou `null` : à venir (début futur), en cours, passé (fin révolue)
+     *
+     * @return Event[]
+     */
+    public function findByOrganizer(Organizer $organizer, ?bool $published, ?string $period, int $limit, int $offset): array
+    {
+        $qb = $this->organizerQuery($organizer, $published, $period)
+            ->addSelect('c', 'l')
+            ->leftJoin('e.category', 'c')
+            ->leftJoin('e.location', 'l')
+            // À venir : le plus proche d'abord ; sinon le plus récent d'abord.
+            ->orderBy('e.startedAt', $period === self::PERIOD_UPCOMING ? 'ASC' : 'DESC')
+            ->addOrderBy('e.id', 'DESC')
+            ->setMaxResults($limit)
+            ->setFirstResult(max(0, $offset));
+
+        return $qb->getQuery()->getResult();
+    }
+
+    public function countByOrganizer(Organizer $organizer, ?bool $published, ?string $period): int
+    {
+        return (int) $this->organizerQuery($organizer, $published, $period)
+            ->select('COUNT(e.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    private function organizerQuery(Organizer $organizer, ?bool $published, ?string $period): QueryBuilder
+    {
+        $qb = $this->createQueryBuilder('e')
+            ->andWhere('e.organizer = :organizer')
+            ->setParameter('organizer', $organizer);
+
+        if ($published !== null) {
+            $qb->andWhere('e.status = :published')->setParameter('published', $published);
+        }
+
+        $now = new \DateTimeImmutable();
+        match ($period) {
+            self::PERIOD_UPCOMING => $qb->andWhere('e.startedAt > :now')->setParameter('now', $now),
+            self::PERIOD_ONGOING => $qb->andWhere('e.startedAt <= :now AND e.endAt >= :now')->setParameter('now', $now),
+            self::PERIOD_PAST => $qb->andWhere('e.endAt < :now')->setParameter('now', $now),
+            default => null,
+        };
+
+        return $qb;
     }
 }

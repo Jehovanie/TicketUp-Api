@@ -48,6 +48,27 @@ final class OrganizerException extends BusinessException
         );
     }
 
+    public static function aucuneModification(): self
+    {
+        return new self(
+            'Aucun champ à modifier : fournissez au moins un champ parmi name, email, phone, website, paymentMethods.',
+            400
+        );
+    }
+
+    public static function filtreInvalide(string $parametre, array $acceptes): self
+    {
+        return new self(
+            sprintf('Le paramètre « %s » doit valoir : %s.', $parametre, implode(', ', $acceptes)),
+            400
+        );
+    }
+
+    public static function parametreInvalide(string $message): self
+    {
+        return new self($message, 400);
+    }
+
     // ---------------------------------------------------- Moyens de paiement
 
     public static function paiementRequis(): self

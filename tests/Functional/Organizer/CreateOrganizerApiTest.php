@@ -3,6 +3,7 @@
 namespace App\Tests\Functional\Organizer;
 
 use App\Tests\Support\ApiTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * POST /api/organizers : comptes mobile money obligatoires (MVola, Orange Money,
@@ -41,7 +42,7 @@ final class CreateOrganizerApiTest extends ApiTestCase
         self::assertSame(2, (int) $this->db()->fetchOne('SELECT COUNT(*) FROM organizer_payment_method'));
     }
 
-    /** @dataProvider invalidBodies */
+    #[DataProvider('invalidBodies')]
     public function testRejectsInvalidPaymentMethodsWithoutWriting(array|null $paymentMethods, string $messagePart): void
     {
         $user = $this->data->user();

@@ -53,7 +53,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 |---|---|---|---|
 | Q-27 | 🟠 | `event.image_url` : type `array` (sérialisation PHP), **déprécié en DBAL 3 et supprimé en DBAL 4** ; jamais alimenté ni exposé. À migrer en `JSON` ou supprimer. | `src/Entity/Event.php` |
 | Q-28 | 🟢 | `user.is_active` : nom de booléen pour une date, type mutable (seule date mutable du modèle avec `refresh_tokens.valid`), jamais utilisé. | `src/Entity/User.php` |
-| Q-29 | 🟢 | `updated_at` jamais rafraîchi sur `event`, `category`, `location`, `organizer`, `ticket_type` (pas de `PreUpdate`). | entités concernées |
+| Q-29 | 🟢 | `updated_at` jamais rafraîchi sur `event`, `category`, `location`, `ticket_type` (pas de `PreUpdate`) ; `organizer` n'est rafraîchi que par `OrganizerUpdater` (`PATCH`), à la main. | entités concernées |
 | Q-30 | 🟢 | Monnaie implicite (ariary) : aucune colonne de devise sur `ticket_type` (les commandes, elles, portent `currency = MGA`). | `src/Entity/TicketType.php` |
 
 ### Index et performance
@@ -69,6 +69,9 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 | Q-32 | 🟢 | `User::getMembershipFor()` / `hasRoleIn()` et `Organizer::hasMember()` parcourent la collection complète (chargement lazy) à chaque contrôle du voter. Acceptable tant que les organisations ont peu de membres. | `src/Entity/User.php`, `OrganizerVoter` |
 | <a id="q-35"></a>Q-35 | 🟠 | **L'invariant « au moins un compte mobile money » n'est garanti qu'à la création via `POST /api/organizers`** (même limite que Q-18). Sont sans compte : les organisations existantes avant `Version20261124124512` (pas de reprise de données), celles créées par l'ancien payload imbriqué de `POST /api/events` (supprimé le 2026-11-24), et toute écriture SQL directe. Aucun endpoint ne permet encore d'ajouter / modifier / retirer un compte : à créer avant d'ouvrir la vente (lot 2), avec refus de retirer le dernier. | `PaymentMethodInputParser`, `EventInputDenormalizer`, migration |
 | Q-36 | 🟢 | Les préfixes opérateur (`MobileMoneyProvider::prefixes()`) reflètent le plan de numérotation actuel (Telma 034/038, Orange 032/037, Airtel 033) ; un nouveau préfixe ou une portabilité des numéros obligerait à les mettre à jour, et à relâcher le contrôle si nécessaire. Le nom du titulaire n'est pas vérifié auprès de l'opérateur. | `src/Enum/MobileMoneyProvider.php` |
+| Q-37 | 🟠 | `GET /api/admin/events/{id}` (`AdminEventDetailsController`) est un **brouillon** : renvoie `"hello": "world"` et les seuls quotas des tarifs (aucune vente), n'a **aucun contrôle d'accès** et plante (500) sur un événement inconnu. Il n'a pas pu servir de base aux statistiques, qui passent par `OrganizerStatsService`. À supprimer ou à réécrire avec `OrganizerVoter`. | `src/Controller/Admin/Event/AdminEventDetailsController.php` |
+| Q-38 | 🟢 | Statistiques : `ticket_order.paid_at` n'est pas indexé (l'index `idx_order_event_status` couvre le filtre par événement et statut). Négligeable tant que les ventes d'une organisation tiennent en quelques dizaines de milliers de lignes ; sinon envisager `(event_id, status, paid_at)`. La série est datée dans le fuseau d'enregistrement des dates (Q-04). | `OrganizerStatsService`, `TicketOrder` |
+| Q-39 | 🟢 | `member-candidates` : un administrateur peut parcourir l'annuaire des utilisateurs par tâtonnement (3 caractères, 10 résultats). Aucune limitation de débit sur l'API ; à ajouter (`framework.rate_limiter`) si l'ouverture des inscriptions le justifie. | `SearchMemberCandidatesController` |
 | Q-33 | 🟢 | `OrganizerMembershipRepository::findByOrganizer()` trie en PHP (`usort`) : pas de pagination SQL possible pour la liste des membres. | repository |
 
 ### Tables orphelines

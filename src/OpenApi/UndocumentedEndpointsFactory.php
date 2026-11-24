@@ -71,6 +71,14 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
         $organizers = $paths->getPath('/api/organizers') ?? new PathItem();
         $paths->addPath('/api/organizers', $organizers->withPost($this->creerOrganisation()));
 
+        $paths->addPath('/api/organizers/{organizerId}', new PathItem(
+            get: $this->detailOrganisation(),
+            patch: $this->modifierOrganisation(),
+        ));
+        $paths->addPath('/api/organizers/{organizerId}/events', new PathItem(get: $this->evenementsOrganisation()));
+        $paths->addPath('/api/organizers/{organizerId}/stats', new PathItem(get: $this->statistiquesOrganisation()));
+        $paths->addPath('/api/organizers/{organizerId}/member-candidates', new PathItem(get: $this->rechercherCandidats()));
+
         $paths->addPath('/api/organizers/{organizerId}/members', new PathItem(
             get: $this->listerMembres(),
             post: $this->ajouterMembre(),
@@ -398,6 +406,214 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                     ],
                 ]
             ), true),
+            security: $this->jwt(),
+        );
+    }
+
+    // ------------------------------------- Gestion d'une organisation (membres)
+
+    private function detailOrganisation(): Operation
+    {
+        return new Operation(
+            operationId: 'api_organizer_detail',
+            tags: ['Organizer'],
+            responses: [
+                '200' => new Response(
+                    'Fiche complète de l’organisation.',
+                    $this->contenu($this->enveloppe(['$ref' => '#/components/schemas/OrganisationDetail']))
+                ),
+                '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '403' => $this->accesRefuse(),
+                '404' => $this->erreurMetier('Organisation introuvable.'),
+            ],
+            summary: 'Fiche d’une organisation (membres)',
+            description: "Droit requis : **ORGANIZER_VIEW** (membre ou plus, ou `ROLE_SUPER_ADMIN`).\n\n"
+                . "Contrairement à la ressource publique `GET /api/organizer/{id}`, la fiche porte les "
+                . "**comptes mobile money** (`paymentMethods`) et **le rôle de l'appelant** (`role`, "
+                . "`roleLabel`, `isOwner`, `joinedAt`) : une page de gestion n'a pas à la recomposer à "
+                . "partir de plusieurs appels. Un `ROLE_SUPER_ADMIN` non membre reçoit `role`, `roleLabel` "
+                . "et `joinedAt` à `null`, `isOwner` à `false`.",
+            parameters: [$this->organizerIdParam()],
+            security: $this->jwt(),
+        );
+    }
+
+    private function modifierOrganisation(): Operation
+    {
+        return new Operation(
+            operationId: 'api_organizer_update',
+            tags: ['Organizer'],
+            responses: [
+                '200' => new Response(
+                    'Organisation modifiée ; renvoie la fiche complète (même forme que `GET`).',
+                    $this->contenu($this->enveloppe(['$ref' => '#/components/schemas/OrganisationDetail']))
+                ),
+                '400' => $this->erreurMetier(
+                    'Corps sans aucun champ modifiable, champ vide ou trop long, email ou URL malformés, '
+                    . '`paymentMethods` vide, opérateur inconnu ou en double, numéro invalide ou incohérent '
+                    . 'avec l’opérateur. Rien n’est écrit dès qu’une partie est invalide.'
+                ),
+                '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '403' => $this->accesRefuse(),
+                '404' => $this->erreurMetier('Organisation introuvable.'),
+            ],
+            summary: 'Modifier une organisation',
+            description: "Droit requis : **ORGANIZER_EDIT** (administrateur ou plus, ou `ROLE_SUPER_ADMIN`).\n\n"
+                . "Modification **partielle** : seuls les champs présents dans le corps changent, au moins un "
+                . "est obligatoire. `name` et `email` ne peuvent pas être vidés ; `phone` et `website` se "
+                . "vident avec `null` ou `\"\"`.\n\n"
+                . "`paymentMethods`, s'il est fourni, **remplace la liste complète** avec les mêmes règles qu'à "
+                . "la création : au moins un compte, un seul par opérateur, numéro cohérent avec "
+                . "l'opérateur. Un opérateur absent de la nouvelle liste est supprimé ; pour retirer un "
+                . "compte, renvoyer la liste sans lui (la liste ne peut jamais être vide).",
+            parameters: [$this->organizerIdParam()],
+            requestBody: new RequestBody('Champs à modifier (tous facultatifs, un au moins)', $this->contenu(
+                [
+                    'type' => 'object',
+                    'minProperties' => 1,
+                    'properties' => [
+                        'name' => ['type' => 'string', 'maxLength' => 100],
+                        'email' => ['type' => 'string', 'format' => 'email', 'maxLength' => 100],
+                        'phone' => ['type' => 'string', 'maxLength' => 50, 'nullable' => true],
+                        'website' => ['type' => 'string', 'format' => 'uri', 'maxLength' => 100, 'nullable' => true],
+                        'paymentMethods' => [
+                            'type' => 'array',
+                            'minItems' => 1,
+                            'maxItems' => 3,
+                            'items' => ['$ref' => '#/components/schemas/CompteMobileMoneyEntree'],
+                        ],
+                    ],
+                ],
+                [
+                    'phone' => '+261 34 00 000 00',
+                    'paymentMethods' => [
+                        ['provider' => 'mvola', 'phoneNumber' => '034 12 345 67', 'accountName' => 'RAKOTO Jean'],
+                    ],
+                ]
+            ), true),
+            security: $this->jwt(),
+        );
+    }
+
+    private function evenementsOrganisation(): Operation
+    {
+        return new Operation(
+            operationId: 'api_organizer_events',
+            tags: ['Organizer'],
+            responses: [
+                '200' => new Response('Événements de l’organisation.', $this->contenu($this->enveloppe([
+                    'type' => 'object',
+                    'properties' => [
+                        'organizer' => [
+                            'type' => 'object',
+                            'properties' => ['id' => ['type' => 'integer'], 'name' => ['type' => 'string']],
+                        ],
+                        'itemsTotal' => ['type' => 'integer', 'description' => 'Total après filtres.'],
+                        'currentPage' => ['type' => 'integer'],
+                        'nombreParPage' => ['type' => 'integer'],
+                        'items' => [
+                            'type' => 'array',
+                            'description' => 'Mêmes champs que `GET /api/events` (groupe `events:lists`).',
+                            'items' => ['type' => 'object'],
+                        ],
+                    ],
+                ]))),
+                '400' => $this->erreurMetier('`status` ou `period` hors des valeurs acceptées.'),
+                '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '403' => $this->accesRefuse(),
+                '404' => $this->erreurMetier('Organisation introuvable.'),
+            ],
+            summary: 'Événements d’une organisation',
+            description: "Droit requis : **ORGANIZER_VIEW**.\n\n"
+                . "Événements d'**une** organisation, **brouillons compris** (`GET /api/events/me` agrège "
+                . "toutes celles de l'utilisateur). Même réponse que `/api/events`. Tri : le plus récent "
+                . "d'abord, sauf `period=upcoming` (le plus proche d'abord).\n\n"
+                . "Filtres combinables : `status` (`published`, `draft`) et `period` — `upcoming` (début "
+                . "futur), `ongoing` (en cours), `past` (fin révolue).",
+            parameters: [
+                $this->organizerIdParam(),
+                new Parameter(name: 'page', in: 'query', required: false, description: 'Numéro de page (défaut : 1)', schema: ['type' => 'integer', 'default' => 1]),
+                new Parameter(name: 'itemsPerPage', in: 'query', required: false, description: 'Éléments par page (défaut : 10, maximum : 20)', schema: ['type' => 'integer', 'default' => 10, 'maximum' => 20]),
+                new Parameter(name: 'status', in: 'query', required: false, description: 'Publié ou brouillon.', schema: ['type' => 'string', 'enum' => ['published', 'draft']]),
+                new Parameter(name: 'period', in: 'query', required: false, description: 'Position dans le temps.', schema: ['type' => 'string', 'enum' => ['upcoming', 'ongoing', 'past']]),
+            ],
+            security: $this->jwt(),
+        );
+    }
+
+    private function statistiquesOrganisation(): Operation
+    {
+        return new Operation(
+            operationId: 'api_organizer_stats',
+            tags: ['Organizer'],
+            responses: [
+                '200' => new Response('Statistiques de vente.', $this->contenu($this->enveloppe(['$ref' => '#/components/schemas/StatistiquesOrganisation']))),
+                '400' => $this->erreurMetier('Granularité inconnue, date mal formée, `from` après `to`, période trop longue, `top` hors de 1–10.'),
+                '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '403' => $this->accesRefuse(),
+                '404' => $this->erreurMetier('Organisation introuvable.'),
+            ],
+            summary: 'Statistiques d’une organisation',
+            description: "Droit requis : **ORGANIZER_VIEW**.\n\n"
+                . "Une **vente** est une commande `paid` : les commandes `pending`, `cancelled`, `expired` et "
+                . "`refunded` ne comptent ni dans les billets vendus ni dans les revenus (elles figurent "
+                . "seulement dans `ordersByStatus`). Revenus en **ariary** (`currency: MGA`).\n\n"
+                . "- `events` et `sales` et `topEvents` couvrent **toute la vie** de l'organisation ;\n"
+                . "- `series` est bornée par `from`/`to` et datée par la date de paiement ; **tous** les jours "
+                . "(ou mois) de la période y figurent, à 0 s'il n'y a pas eu de vente : prête pour un graphique.\n\n"
+                . "Défauts : `granularity=day` sur les 30 derniers jours, ou 12 derniers mois pour `month`. "
+                . "Maximum : 366 jours ou 36 mois.",
+            parameters: [
+                $this->organizerIdParam(),
+                new Parameter(name: 'granularity', in: 'query', required: false, description: 'Pas de la série.', schema: ['type' => 'string', 'enum' => ['day', 'month'], 'default' => 'day']),
+                new Parameter(name: 'from', in: 'query', required: false, description: 'Début de la série (AAAA-MM-JJ ; ramené au 1er du mois pour `month`).', schema: ['type' => 'string', 'format' => 'date']),
+                new Parameter(name: 'to', in: 'query', required: false, description: 'Fin de la série, incluse (AAAA-MM-JJ). Défaut : aujourd’hui.', schema: ['type' => 'string', 'format' => 'date']),
+                new Parameter(name: 'top', in: 'query', required: false, description: 'Nombre d’événements dans le classement (défaut 5, maximum 10).', schema: ['type' => 'integer', 'default' => 5, 'minimum' => 1, 'maximum' => 10]),
+            ],
+            security: $this->jwt(),
+        );
+    }
+
+    private function rechercherCandidats(): Operation
+    {
+        return new Operation(
+            operationId: 'api_organizer_member_candidates',
+            tags: [self::TAG_MEMBRES],
+            responses: [
+                '200' => new Response('Utilisateurs invitables.', $this->contenu($this->enveloppe([
+                    'type' => 'object',
+                    'properties' => [
+                        'itemsTotal' => ['type' => 'integer'],
+                        'items' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'id' => ['type' => 'integer', 'description' => 'À passer comme `userId` à `POST …/members`.'],
+                                    'email' => ['type' => 'string', 'format' => 'email'],
+                                    'firstname' => ['type' => 'string'],
+                                    'lastname' => ['type' => 'string'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ]))),
+                '400' => $this->erreurMetier('`q` absent ou de moins de 3 caractères.'),
+                '401' => new Response('Jeton absent, invalide ou expiré.'),
+                '403' => $this->accesRefuse(),
+                '404' => $this->erreurMetier('Organisation introuvable.'),
+            ],
+            summary: 'Rechercher un utilisateur à inviter',
+            description: "Droit requis : **ORGANIZER_MANAGE_MEMBERS** (administrateur ou plus) — celui de "
+                . "l'invitation elle-même.\n\n"
+                . "Correspondance partielle, insensible à la casse, sur l'email, le prénom ou le nom. Les "
+                . "membres actuels de l'organisation sont exclus.\n\n"
+                . "Cet endpoint expose un annuaire : il est **borné** — `q` d'au moins 3 caractères, 10 "
+                . "résultats au plus (sans pagination), champs minimaux (ni téléphone ni rôles).",
+            parameters: [
+                $this->organizerIdParam(),
+                new Parameter(name: 'q', in: 'query', required: true, description: 'Terme recherché (3 caractères minimum).', schema: ['type' => 'string', 'minLength' => 3]),
+            ],
             security: $this->jwt(),
         );
     }
@@ -760,6 +976,86 @@ final class UndocumentedEndpointsFactory implements OpenApiFactoryInterface
                 'roleLabel' => $roleLabel,
                 'isOwner' => ['type' => 'boolean'],
                 'joinedAt' => $joinedAt + ['nullable' => true],
+            ],
+        ];
+
+        $schemas['OrganisationDetail'] = [
+            'type' => 'object',
+            'description' => 'Fiche complète d’une organisation, avec le rôle de l’appelant (`null` pour un '
+                . '`ROLE_SUPER_ADMIN` non membre).',
+            'properties' => array_merge($schemas['OrganisationUtilisateur']['properties'], [
+                'role' => ['nullable' => true] + $role,
+                'roleLabel' => ['nullable' => true] + $roleLabel,
+                'createdAt' => ['type' => 'string', 'format' => 'date-time'],
+                'updatedAt' => ['type' => 'string', 'format' => 'date-time'],
+            ]),
+        ];
+
+        $nombre = ['type' => 'integer'];
+        $schemas['StatistiquesOrganisation'] = [
+            'type' => 'object',
+            'properties' => [
+                'organizer' => [
+                    'type' => 'object',
+                    'properties' => ['id' => $nombre, 'name' => ['type' => 'string']],
+                ],
+                'currency' => ['type' => 'string', 'example' => 'MGA'],
+                'generatedAt' => ['type' => 'string', 'format' => 'date-time'],
+                'events' => [
+                    'type' => 'object',
+                    'description' => 'Compte des événements, brouillons compris. `upcoming`, `ongoing` et `past` sont exclusifs.',
+                    'properties' => [
+                        'total' => $nombre, 'published' => $nombre, 'draft' => $nombre,
+                        'upcoming' => $nombre, 'ongoing' => $nombre, 'past' => $nombre,
+                    ],
+                ],
+                'sales' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'ordersPaid' => $nombre,
+                        'ticketsSold' => $nombre,
+                        'revenue' => ['type' => 'integer', 'description' => 'En ariary.'],
+                        'ordersByStatus' => [
+                            'type' => 'object',
+                            'description' => 'Commandes par statut (tous les statuts, 0 compris).',
+                            'properties' => [
+                                'pending' => $nombre, 'paid' => $nombre, 'cancelled' => $nombre,
+                                'expired' => $nombre, 'refunded' => $nombre,
+                            ],
+                        ],
+                    ],
+                ],
+                'series' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'granularity' => ['type' => 'string', 'enum' => ['day', 'month']],
+                        'from' => ['type' => 'string', 'format' => 'date'],
+                        'to' => ['type' => 'string', 'format' => 'date'],
+                        'points' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'properties' => [
+                                    'date' => ['type' => 'string', 'example' => '2026-11-24', 'description' => 'AAAA-MM-JJ, ou AAAA-MM pour `month`.'],
+                                    'orders' => $nombre,
+                                    'ticketsSold' => $nombre,
+                                    'revenue' => $nombre,
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+                'topEvents' => [
+                    'type' => 'array',
+                    'description' => 'Classés par billets vendus puis revenus ; seuls les événements avec au moins une vente.',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'id' => $nombre, 'title' => ['type' => 'string'],
+                            'ticketsSold' => $nombre, 'orders' => $nombre, 'revenue' => $nombre,
+                        ],
+                    ],
+                ],
             ],
         ];
 
