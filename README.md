@@ -117,6 +117,25 @@ open http://localhost:8000/api/docs              # Swagger UI
 php bin/console debug:router                     # liste réelle des routes
 ```
 
+## Stockage de fichiers (MinIO / S3)
+
+Les fichiers utilisateurs (images d'événements, logos…) sont stockés sur MinIO, lancé
+séparément depuis `../outils` (`docker compose up -d`, voir son README).
+
+1. Copier dans `.env.local` les identifiants **applicatifs** de `../outils/.env`
+   (jamais le compte root) :
+   ```
+   S3_BUCKET=<APP_BUCKET>
+   S3_ACCESS_KEY=<APP_ACCESS_KEY>
+   S3_SECRET_KEY=<APP_SECRET_KEY>
+   ```
+   Les autres variables `S3_*` ont une valeur par défaut dans `.env`.
+2. Vérifier : `php bin/console app:storage:check`
+
+Dans le code, injecter `App\Service\Storage\FileStorage` : `upload()` retourne la **clé** de
+l'objet, à stocker en base ; `temporaryUrl()` génère une URL présignée à donner au client
+(le bucket est privé). En environnement `test`, le stockage est en mémoire.
+
 ## Conventions de l'API
 
 Tout est préfixé par `/api`. Trois choses à savoir avant d'écrire le moindre client :

@@ -1,0 +1,19 @@
+# Stockage des fichiers utilisateurs sur MinIO (compatible S3).
+# Serveur : ../outils/docker-compose.yml — variables S3_* dans .env / .env.local.
+# Doc : https://github.com/thephpleague/flysystem-bundle/blob/master/docs/1-getting-started.md
+flysystem:
+    storages:
+        # Injecté via `League\Flysystem\FilesystemOperator $userFilesStorage`
+        user_files.storage:
+            adapter: 'aws'
+            options:
+                client: 'app.s3_client'
+                bucket: '%env(S3_BUCKET)%'
+                # Pas d'option `visibility` : aucun en-tête ACL n'est envoyé,
+                # le bucket reste privé (cf. policy `app-rw` côté MinIO).
+
+when@test:
+    flysystem:
+        storages:
+            user_files.storage:
+                adapter: 'memory'

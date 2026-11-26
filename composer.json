@@ -14,6 +14,8 @@
         "doctrine/doctrine-migrations-bundle": "^3.4",
         "doctrine/orm": "^3.3",
         "gesdinet/jwt-refresh-token-bundle": "^1.5",
+        "league/flysystem-aws-s3-v3": "^3.35",
+        "league/flysystem-bundle": "^3.7",
         "lexik/jwt-authentication-bundle": "^3.1",
         "nelmio/cors-bundle": "^2.5",
         "phpdocumentor/reflection-docblock": "^5.6",
@@ -31,12 +33,14 @@
         "symfony/security-bundle": "7.2.*",
         "symfony/serializer": "7.2.*",
         "symfony/twig-bundle": "7.2.*",
+        "symfony/uid": "7.2.*",
         "symfony/validator": "7.2.*",
         "symfony/yaml": "7.2.*"
     },
     "require-dev": {
         "doctrine/doctrine-fixtures-bundle": "^4.1",
         "fakerphp/faker": "^1.24",
+        "league/flysystem-memory": "^3.31",
         "phpunit/phpunit": "^11",
         "symfony/maker-bundle": "^1.62"
     },
