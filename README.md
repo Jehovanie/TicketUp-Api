@@ -136,6 +136,35 @@ Dans le code, injecter `App\Service\Storage\FileStorage` : `upload()` retourne l
 l'objet, à stocker en base ; `temporaryUrl()` génère une URL présignée à donner au client
 (le bucket est privé). En environnement `test`, le stockage est en mémoire.
 
+### Images d'événement
+
+`POST /api/events` accepte 0 à 3 images (JPEG / PNG / WebP, 5 Mo max chacune) en
+`multipart/form-data` : un champ `data` contenant le JSON habituel de l'événement, et les
+fichiers `images[]`. Le JSON simple reste accepté (sans image).
+
+```bash
+curl -X POST http://localhost:8000/api/events \
+  -H "Authorization: Bearer $TOKEN" -H "Accept: application/json" \
+  -F 'data={"title":"Concert","description":"…","startedAt":"2027-01-01T18:00:00+03:00","endAt":"2027-01-01T22:00:00+03:00","organizer":{"id":1},"category":{"id":1},"location":{"id":1}}' \
+  -F "images[]=@affiche.jpg" -F "images[]=@scene.png"
+```
+
+```ts
+const form = new FormData();
+form.append('data', JSON.stringify(event));
+files.slice(0, 3).forEach((f) => form.append('images[]', f));
+http.post('/api/events', form); // ne PAS fixer Content-Type : le navigateur ajoute le boundary
+```
+
+Réponse `201` dans l'enveloppe habituelle ; chaque événement (création, détail, listes) expose
+`images: [{ key, url }]`. `url` expire (`S3_PRESIGNED_URL_TTL`, 15 min par défaut) : ne pas la
+stocker côté client, relire l'événement. Règles complètes :
+[BR-EVT-09](docs/database/business-rules.md#br-evt-09).
+
+> ⚠️ **Limites PHP** : par défaut `upload_max_filesize = 2M` et `post_max_size = 8M`, soit moins
+> que 3 × 5 Mo. Régler dans `php.ini` (et le reverse proxy, ex. `client_max_body_size` nginx) :
+> `upload_max_filesize = 5M`, `post_max_size = 16M`.
+
 ## Conventions de l'API
 
 Tout est préfixé par `/api`. Trois choses à savoir avant d'écrire le moindre client :
@@ -152,7 +181,7 @@ enveloppe maison :
 ```
 
 Les endpoints laissés au pipeline natif d'API Platform (`/api/categories/{id}`, `/api/locations`,
-`/api/location/{id}`, `/api/organizers`, `/api/organizer/{id}`, `POST /api/events`) répondent en
+`/api/location/{id}`, `/api/organizers`, `/api/organizer/{id}`) répondent en
 **JSON-LD / Hydra** (`@context`, `@id`, `member`). Envoyer `Accept: application/json` pour obtenir
 du JSON simple à la place.
 
@@ -227,10 +256,11 @@ Le firewall `^/api` est en `jwt: ~` **sans `access_control` global** : seules le
 | `GET /api/user/me` | `GET /api/events`, `/api/events/{id}`, `/api/events/search` |
 | `GET /api/events/me` | `GET /api/events/category/{categoryId}` |
 | `GET /api/organizers/me`, `GET /api/user/me/organizations` | `GET /api/categories`, `/api/locations`, `/api/organizers` |
-| `POST /api/organizers` | **`POST /api/events`** ⚠️ |
-| tout `/api/organizers/{id}/members…` | `GET /api/admin/events/{id}` ⚠️ |
+| `POST /api/organizers` | `GET /api/admin/events/{id}` ⚠️ |
+| `POST /api/events` (+ être membre de l'organisation) | |
+| tout `/api/organizers/{id}/members…` | |
 
-> ⚠️ La création d'événement et l'endpoint `/api/admin/…` sont ouverts. C'est l'état réel du code,
+> ⚠️ L'endpoint `/api/admin/…` est ouvert. C'est l'état réel du code,
 > pas un oubli de documentation — à ne pas exposer tel quel sur Internet.
 
 ## CORS

@@ -35,7 +35,7 @@ Sources : `config/packages/doctrine.yaml`, `src/Entity/*.php`, `migrations/Versi
 | Montants | `int` (ariary, sans décimales) | `INT` |
 | Booléen | `bool` | `BOOLEAN` |
 | Énumération | enum PHP adossé à une chaîne (`OrganizerRole`) via `enumType` | `VARCHAR(20)`, sans `CHECK` |
-| Listes | `array` | `JSON` (`user.roles`) ou **`TEXT` sérialisé PHP** (`event.image_url`, `Types::ARRAY`) |
+| Listes | `array` | `JSON` (`user.roles`, `event.images`) — plus aucun `Types::ARRAY` (sérialisation PHP) depuis `Version20261127122032` |
 | Textes courts | `string` | `VARCHAR(n)` avec longueur explicite (50, 100, 150, 180) |
 
 ## Dates et fuseaux horaires

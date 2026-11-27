@@ -58,6 +58,36 @@ abstract class ApiTestCase extends DatabaseTestCase
         return $response;
     }
 
+    /**
+     * Requête `multipart/form-data` (formulaire + fichiers), ex. création
+     * d'événement avec images.
+     *
+     * @param array<string, string>                                    $fields champs texte
+     * @param array<string, \Symfony\Component\HttpFoundation\File\UploadedFile|list<\Symfony\Component\HttpFoundation\File\UploadedFile>> $files
+     *        fichiers, créés avec `test: true` (sinon `isValid()` les refuse)
+     */
+    protected function multipart(string $method, string $uri, array $fields, array $files = [], ?User $as = null): Response
+    {
+        $container = static::getContainer();
+
+        $server = [
+            'CONTENT_TYPE' => 'multipart/form-data; boundary=----test',
+            'HTTP_ACCEPT' => 'application/json',
+        ];
+
+        if ($as !== null) {
+            $server['HTTP_AUTHORIZATION'] = 'Bearer ' . $container->get(JWTTokenManagerInterface::class)->create($as);
+        }
+
+        $container->get('services_resetter')->reset();
+
+        $request = Request::create($uri, $method, $fields, [], $files, $server);
+        $response = static::$kernel->handle($request);
+        static::$kernel->terminate($request, $response);
+
+        return $response;
+    }
+
     /** Corps JSON décodé, avec un message d'échec lisible si ce n'est pas du JSON. */
     protected function json(Response $response): array
     {

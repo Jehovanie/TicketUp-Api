@@ -27,7 +27,7 @@ Remarques valables pour **toutes** les tables :
 | `description` | `TEXT` | non | — | — | — | Description longue |
 | `started_at` | `TIMESTAMP(0)` | non | — | — | — | Date/heure de début |
 | `end_at` | `TIMESTAMP(0)` | non | — | — | — | Date/heure de fin |
-| `image_url` | `TEXT` | non | — | — | commentaire `(DC2Type:array)` | Liste d'URL d'images, stockée en **tableau PHP sérialisé** (`Types::ARRAY`). Jamais alimentée ni exposée par l'API (aucun groupe de sérialisation, absente du dénormaliseur). |
+| `images` | `JSON` | non | `'[]'` | 3 éléments (applicatif) | — | Liste des **clés** S3 des images (`events/{id}/…`), dans l'ordre d'envoi ; 3 au plus (`Event::MAX_IMAGES`, non contraint en base). Remplace `image_url` (`Version20261127122032`). Voir [BR-EVT-09](business-rules.md#br-evt-09). |
 | `created_at` | `TIMESTAMP(0)` | non | — | — | — | Date de création (posée dans le constructeur) |
 | `updated_at` | `TIMESTAMP(0)` | non | — | — | — | Date de modification (posée dans le constructeur uniquement, non rafraîchie) |
 | `status` | `BOOLEAN` | non | — | — | — | Publication : `true` = publié, `false` = brouillon. Initialisé à `false` dans le constructeur. |

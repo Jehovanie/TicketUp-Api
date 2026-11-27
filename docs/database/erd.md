@@ -51,7 +51,7 @@ erDiagram
         text description "NOT NULL"
         timestamp started_at "NOT NULL, sans fuseau"
         timestamp end_at "NOT NULL, sans fuseau"
-        text image_url "NOT NULL, tableau PHP serialise (DC2Type array)"
+        json images "NOT NULL, defaut [], cles S3 (3 max)"
         timestamp created_at "NOT NULL"
         timestamp updated_at "NOT NULL"
         boolean status "NOT NULL, true = publie"

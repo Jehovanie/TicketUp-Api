@@ -156,17 +156,95 @@ use Symfony\Component\Serializer\Annotation\Groups;
         ),
         new \ApiPlatform\Metadata\Post(
             uriTemplate: '/events',
+            controller: \App\Controller\Api\Event\CreateEventController::class,
+            read: false,
+            deserialize: false,
+            validate: false,
+            write: false,
+            inputFormats: ['json' => ['application/json'], 'multipart' => ['multipart/form-data']],
             denormalizationContext: ["groups" => ['events:create']],
             openapi: new \ApiPlatform\OpenApi\Model\Operation(
-                description: "L'organisation n'est **pas** créée ici : `organizer.id` est obligatoire "
+                summary: 'Créer un événement (avec 0 à 3 images)',
+                description: "Requiert un jeton JWT et d'être **membre** de l'organisation visée (`403` sinon).\n\n"
+                    . "L'organisation n'est **pas** créée ici : `organizer.id` est obligatoire "
                     . "(`400` sinon). Créez-la d'abord via `POST /api/organizers`. Catégorie et lieu sont "
-                    . "liés par `id` ou créés à partir des champs fournis."
+                    . "liés par `id` ou créés à partir des champs fournis.\n\n"
+                    . "**Images** : envoyer en `multipart/form-data` un champ `data` (l'objet événement en JSON) "
+                    . "et de 0 à 3 fichiers `images[]` — JPEG, PNG ou WebP, 5 Mo maximum chacun. "
+                    . "Le JSON simple (`application/json`) reste accepté, sans image. "
+                    . "Tout ou rien : une image refusée (`400`) ou un stockage indisponible (`503`) "
+                    . "n'enregistre aucun événement.\n\n"
+                    . "Réponse `201` : enveloppe `{ message, status, data }` ; `data.images` liste "
+                    . "`{ key, url }`, où `url` est une URL présignée à durée limitée.",
+                requestBody: new \ApiPlatform\OpenApi\Model\RequestBody(
+                    content: new \ArrayObject([
+                        'multipart/form-data' => [
+                            'schema' => [
+                                'type' => 'object',
+                                'required' => ['data'],
+                                'properties' => [
+                                    'data' => [
+                                        'type' => 'string',
+                                        'description' => "L'événement en JSON (même format que le corps application/json).",
+                                        'example' => '{"title":"Concert","description":"…","startedAt":"2027-01-01T18:00:00+03:00","endAt":"2027-01-01T22:00:00+03:00","organizer":{"id":1},"category":{"id":1},"location":{"id":1},"ticket_type":[{"name":"Standard","prix":10000,"quantite_max":100}]}',
+                                    ],
+                                    'images[]' => [
+                                        'type' => 'array',
+                                        'maxItems' => self::MAX_IMAGES,
+                                        'items' => ['type' => 'string', 'format' => 'binary'],
+                                        'description' => '0 à 3 images (JPEG, PNG, WebP ; 5 Mo max chacune).',
+                                    ],
+                                ],
+                            ],
+                            'encoding' => ['images[]' => ['contentType' => 'image/jpeg, image/png, image/webp']],
+                        ],
+                        // Schéma écrit à la main : avec `deserialize: false`, API Platform
+                        // ne le génère pas. Champs lus par EventInputDenormalizer.
+                        'application/json' => [
+                            'schema' => [
+                                'type' => 'object',
+                                'required' => ['title', 'description', 'startedAt', 'endAt', 'organizer', 'location'],
+                                'properties' => [
+                                    'title' => ['type' => 'string', 'maxLength' => 150],
+                                    'description' => ['type' => 'string'],
+                                    'startedAt' => ['type' => 'string', 'format' => 'date-time'],
+                                    'endAt' => ['type' => 'string', 'format' => 'date-time'],
+                                    'organizer' => [
+                                        'type' => 'object', 'required' => ['id'],
+                                        'properties' => ['id' => ['type' => 'integer']],
+                                    ],
+                                    'category' => [
+                                        'type' => 'object',
+                                        'description' => 'Par `id`, ou créée à partir de `name` / `color`.',
+                                        'properties' => ['id' => ['type' => 'integer'], 'name' => ['type' => 'string'], 'color' => ['type' => 'string']],
+                                    ],
+                                    'location' => [
+                                        'type' => 'object',
+                                        'description' => 'Par `id`, ou créé à partir de `name` / `size`.',
+                                        'properties' => ['id' => ['type' => 'integer'], 'name' => ['type' => 'string'], 'size' => ['type' => 'integer']],
+                                    ],
+                                    'ticket_type' => [
+                                        'type' => 'array',
+                                        'items' => [
+                                            'type' => 'object',
+                                            'required' => ['name', 'prix', 'quantite_max'],
+                                            'properties' => ['name' => ['type' => 'string'], 'prix' => ['type' => 'integer'], 'quantite_max' => ['type' => 'integer']],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ]),
+                ),
             ),
         ),
     ]
 )]
 class Event
 {
+    /** Nombre maximal d'images par événement (zéro est accepté). */
+    public const MAX_IMAGES = 3;
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -189,9 +267,15 @@ class Event
     #[Groups(['events:lists', 'events:create'])]
     private ?\DateTimeImmutable $endAt = null;
 
-    #[ORM\Column(type: Types::ARRAY)]
-
-    private array $imageUrl = [];
+    /**
+     * Clés des images dans le bucket S3 (ex. `events/42/<uuid>-affiche.jpg`),
+     * jamais des URLs : le bucket est privé, les URLs présignées sont générées
+     * à la sérialisation ({@see \App\Serializer\Normalizer\EventImagesNormalizer}).
+     *
+     * @var list<string>
+     */
+    #[ORM\Column(type: Types::JSON, options: ['default' => '[]'])]
+    private array $images = [];
 
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
@@ -287,15 +371,20 @@ class Event
         return $this;
     }
 
-
-    public function getImageUrl(): array
+    /** @return list<string> */
+    public function getImages(): array
     {
-        return $this->imageUrl;
+        return $this->images;
     }
 
-    public function setImageUrl(array $imageUrl): static
+    /** @param list<string> $images */
+    public function setImages(array $images): static
     {
-        $this->imageUrl = $imageUrl;
+        if (count($images) > self::MAX_IMAGES) {
+            throw new \LengthException(sprintf('Un événement compte au plus %d images.', self::MAX_IMAGES));
+        }
+
+        $this->images = array_values($images);
 
         return $this;
     }

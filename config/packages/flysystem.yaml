@@ -17,3 +17,7 @@ when@test:
         storages:
             user_files.storage:
                 adapter: 'memory'
+                temporary_url_generator: 'App\Tests\Support\FakeTemporaryUrlGenerator'
+
+    services:
+        App\Tests\Support\FakeTemporaryUrlGenerator: ~

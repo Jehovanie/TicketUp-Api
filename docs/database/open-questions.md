@@ -14,7 +14,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 | Q-08 | `organizer.email` doit-il être unique ? Une organisation peut-elle être une personne physique (RGPD) ? | Choix volontairement non tranché dans le contrôleur | `CreateOrganizerController::website()` (docblock) |
 | Q-09 | Quelle est la politique de sauvegarde, de conservation et de purge (comptes supprimés) ? Planification de `gesdinet:jwt:clear` (refresh tokens expirés) à confirmer côté infrastructure. | Rien dans le dépôt | `operations.md` |
 | Q-15 | Algorithme de hachage effectif en production (bcrypt / Argon2id) ? | Hasher `auto` | `config/packages/security.yaml` |
-| Q-16 | La création anonyme via `POST /api/events` (événement + organisation/catégorie/lieu imbriqués) est-elle voulue ? | Aucun contrôle d'accès sur l'opération | `src/Entity/Event.php`, `security.yaml` |
+| Q-16 | ✅ **Corrigé le 2026-11-27** : `POST /api/events` exige un jeton et d'être membre de l'organisation visée (`401` / `403`), indispensable dès lors que la route accepte des fichiers. *Question initiale : la création anonyme était-elle voulue ?* | — | `CreateEventController` |
 | Q-17 | Colonnes exactes de `doctrine_migration_versions` | Gérée par le bundle, non décrite dans le code | — |
 
 ## B. Anomalies repérées
@@ -51,7 +51,7 @@ Classement : **🔴 élevé** (intégrité / perte de données / sécurité), **
 
 | ID | Gravité | Constat | Source |
 |---|---|---|---|
-| Q-27 | 🟠 | `event.image_url` : type `array` (sérialisation PHP), **déprécié en DBAL 3 et supprimé en DBAL 4** ; jamais alimenté ni exposé. À migrer en `JSON` ou supprimer. | `src/Entity/Event.php` |
+| Q-27 | ✅ | **Corrigé le 2026-11-27** : `event.image_url` (type `array` déprécié, jamais alimenté) remplacée par `event.images` (`JSON`, clés S3) — `Version20261127122032`, voir BR-EVT-09. | `src/Entity/Event.php` |
 | Q-28 | 🟢 | `user.is_active` : nom de booléen pour une date, type mutable (seule date mutable du modèle avec `refresh_tokens.valid`), jamais utilisé. | `src/Entity/User.php` |
 | Q-29 | 🟢 | `updated_at` jamais rafraîchi sur `event`, `category`, `location`, `ticket_type` (pas de `PreUpdate`) ; `organizer` n'est rafraîchi que par `OrganizerUpdater` (`PATCH`), à la main. | entités concernées |
 | Q-30 | 🟢 | Monnaie implicite (ariary) : aucune colonne de devise sur `ticket_type` (les commandes, elles, portent `currency = MGA`). | `src/Entity/TicketType.php` |

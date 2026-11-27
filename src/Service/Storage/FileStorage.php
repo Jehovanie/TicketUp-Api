@@ -66,6 +66,21 @@ final class FileStorage
         return $this->userFilesStorage->fileExists($key);
     }
 
+    /**
+     * Clés des fichiers sous un préfixe (récursif), ex. `events/42`.
+     *
+     * @return list<string>
+     *
+     * @throws FilesystemException
+     */
+    public function listKeys(string $directory): array
+    {
+        return $this->userFilesStorage->listContents(trim($directory, '/'), true)
+            ->filter(static fn ($item) => $item->isFile())
+            ->map(static fn ($item) => $item->path())
+            ->toArray();
+    }
+
     /** Suppression idempotente : ne lève pas d'erreur si l'objet n'existe pas. */
     public function delete(string $key): void
     {

@@ -123,4 +123,54 @@ final class EventException extends BusinessException
     {
         return new self(sprintf('Aucun lieu ne porte l’identifiant %d.', $id), 400);
     }
+
+    // --------------------------------------------------------------- Création
+
+    public static function corpsInvalide(): self
+    {
+        return new self(
+            'Corps de requête invalide : envoyez un objet JSON (application/json), ou en multipart/form-data '
+            . 'un champ « data » contenant ce JSON et jusqu’à 3 fichiers « images[] ». '
+            . 'Si vous avez envoyé des images, leur poids total dépasse peut-être la limite du serveur.',
+            400
+        );
+    }
+
+    public static function organisationNonMembre(): self
+    {
+        return new self('Vous devez être membre de cette organisation pour lui créer un événement.', 403);
+    }
+
+    // ----------------------------------------------------------------- Images
+
+    public static function tropDImages(int $recues, int $maximum): self
+    {
+        return new self(sprintf('Un événement compte au plus %d images (%d reçues).', $maximum, $recues), 400);
+    }
+
+    public static function imageNonRecue(string $nom, string $raison): self
+    {
+        return new self(sprintf('L’image « %s » n’a pas pu être reçue : %s.', $nom, $raison), 400);
+    }
+
+    public static function imageTypeInvalide(string $nom, string $type, array $acceptes): self
+    {
+        return new self(
+            sprintf('L’image « %s » est de type %s : seuls %s sont acceptés.', $nom, $type, implode(', ', $acceptes)),
+            400
+        );
+    }
+
+    public static function imageTropLourde(string $nom, int $maximumOctets): self
+    {
+        return new self(
+            sprintf('L’image « %s » dépasse la taille maximale de %d Mo.', $nom, intdiv($maximumOctets, 1024 * 1024)),
+            400
+        );
+    }
+
+    public static function stockageIndisponible(): self
+    {
+        return new self('Le stockage des images est momentanément indisponible : réessayez plus tard. Rien n’a été créé.', 503);
+    }
 }
